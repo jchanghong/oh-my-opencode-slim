@@ -15,6 +15,7 @@ import {
   createTodoContinuationHook,
   ForegroundFallbackManager,
 } from './hooks';
+import { createInterviewManager } from './interview';
 import { createBuiltinMcps } from './mcp';
 import { getMultiplexer, startAvailabilityCheck } from './multiplexer';
 import {
@@ -174,6 +175,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     autoEnable: config.todoContinuation?.autoEnable ?? false,
     autoEnableThreshold: config.todoContinuation?.autoEnableThreshold ?? 4,
   });
+  const interviewManager = createInterviewManager(ctx, config);
 
   return {
     name: 'oh-my-opencode-slim',
@@ -384,6 +386,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
             'Enable auto-continuation — orchestrator keeps working through incomplete todos',
         };
       }
+
+      interviewManager.registerCommand(opencodeConfig);
     },
 
     event: async (input) => {
@@ -437,6 +441,12 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           properties?: { sessionID?: string };
         },
       );
+
+      await interviewManager.handleEvent(
+        input as {
+          event: { type: string; properties?: Record<string, unknown> };
+        },
+      );
     },
 
     // Direct interception of /auto-continue command — bypasses LLM round-trip
@@ -449,15 +459,21 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
         output as { parts: Array<{ type: string; text?: string }> },
       );
+
+      await interviewManager.handleCommandExecuteBefore(
+        input as {
+          command: string;
+          sessionID: string;
+          arguments: string;
+        },
+        output as { parts: Array<{ type: string; text?: string }> },
+      );
     },
 
     'chat.headers': chatHeadersHook['chat.headers'],
 
     // Track which agent each session uses (needed for serve-mode prompt injection)
-    'chat.message': async (input: {
-      sessionID: string;
-      agent?: string;
-    }) => {
+    'chat.message': async (input: { sessionID: string; agent?: string }) => {
       if (input.agent) {
         sessionAgentMap.set(input.sessionID, input.agent);
       }
@@ -483,7 +499,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         if (!alreadyInjected) {
           // Prepend the orchestrator prompt to the system array
           const { ORCHESTRATOR_PROMPT } = await import('./agents/orchestrator');
-          output.system[0] = ORCHESTRATOR_PROMPT + (output.system[0] ? '\n\n' + output.system[0] : '');
+          output.system[0] =
+            ORCHESTRATOR_PROMPT +
+            (output.system[0] ? '\n\n' + output.system[0] : '');
         }
       }
     },

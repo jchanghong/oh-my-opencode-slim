@@ -1,6 +1,6 @@
 {
   "name": "oh-my-opencode-slim",
-  "version": "0.9.5",
+  "version": "0.9.9",
   "description": "Lightweight agent orchestration plugin for OpenCode - a slimmed-down fork of oh-my-opencode",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,8 +36,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun --format esm --packages external && bun build src/cli/index.ts --outdir dist/cli --target bun --format esm --packages external && bun tsc --emitDeclarationOnly && bun run generate-schema",
-    "prepare": "bun build src/index.ts --outdir dist --target bun --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk",
+    "build": "bun build src/index.ts --outdir dist --target bun --format esm --packages external && bun build src/cli/index.ts --outdir dist/cli --target bun --format esm --packages external && tsc --emitDeclarationOnly && bun run generate-schema",
+    "prepare": "bun build src/index.ts --outdir dist --target bun --format esm --packages external --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk",
     "contributors:add": "all-contributors add",
     "contributors:check": "all-contributors check",
     "contributors:generate": "all-contributors generate",
