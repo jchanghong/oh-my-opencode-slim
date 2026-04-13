@@ -258,6 +258,13 @@
               "items": {
                 "type": "string"
               }
+            },
+            "options": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
             }
           }
         }
@@ -321,6 +328,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "options": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           }
         }
       }
@@ -430,6 +444,12 @@
         "autoOpenBrowser": {
           "default": true,
           "type": "boolean"
+        },
+        "port": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
         }
       }
     },

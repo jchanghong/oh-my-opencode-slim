@@ -5,6 +5,7 @@ import { loadPluginConfig, type MultiplexerConfig } from './config';
 import { parseList } from './config/agent-mcps';
 import { CouncilManager } from './council';
 import {
+  createApplyPatchHook,
   createAutoUpdateCheckerHook,
   createChatHeadersHook,
   createDelegateTaskRetryHook,
@@ -147,13 +148,21 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     config,
   );
 
+  // Track session → agent mapping for serve-mode system prompt injection
+  const sessionAgentMap = new Map<string, string>();
+
   // Initialize post-file-tool nudge hook
-  const postFileToolNudgeHook = createPostFileToolNudgeHook();
+  const postFileToolNudgeHook = createPostFileToolNudgeHook({
+    shouldInject: (sessionID) =>
+      sessionAgentMap.get(sessionID) === 'orchestrator',
+  });
 
   const chatHeadersHook = createChatHeadersHook(ctx);
 
   // Initialize delegate-task retry guidance hook
   const delegateTaskRetryHook = createDelegateTaskRetryHook(ctx);
+
+  const applyPatchHook = createApplyPatchHook(ctx);
 
   // Initialize JSON parse error recovery hook
   const jsonErrorRecoveryHook = createJsonErrorRecoveryHook(ctx);
@@ -164,9 +173,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     runtimeChains,
     config.fallback?.enabled !== false && Object.keys(runtimeChains).length > 0,
   );
-
-  // Track session → agent mapping for serve-mode system prompt injection
-  const sessionAgentMap = new Map<string, string>();
 
   // Initialize todo-continuation hook (opt-in auto-continue for incomplete todos)
   const todoContinuationHook = createTodoContinuationHook(ctx, {
@@ -447,6 +453,29 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           event: { type: string; properties?: Record<string, unknown> };
         },
       );
+
+      await postFileToolNudgeHook.event(
+        input as {
+          event: {
+            type: string;
+            properties?: {
+              info?: { id?: string };
+              sessionID?: string;
+            };
+          };
+        },
+      );
+    },
+
+    // Best-effort rescue only for stale apply_patch input before native execution
+    'tool.execute.before': async (input, output) => {
+      await applyPatchHook['tool.execute.before'](
+        input as {
+          tool: string;
+          directory?: string;
+        },
+        output as { args?: { patchText?: unknown; [key: string]: unknown } },
+      );
     },
 
     // Direct interception of /auto-continue command — bypasses LLM round-trip
@@ -473,10 +502,18 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     'chat.headers': chatHeadersHook['chat.headers'],
 
     // Track which agent each session uses (needed for serve-mode prompt injection)
-    'chat.message': async (input: { sessionID: string; agent?: string }) => {
-      if (input.agent) {
-        sessionAgentMap.set(input.sessionID, input.agent);
+    'chat.message': async (
+      input: { sessionID: string; agent?: string },
+      output?: { message?: { agent?: string } },
+    ) => {
+      const agent = input.agent ?? output?.message?.agent;
+      if (agent) {
+        sessionAgentMap.set(input.sessionID, agent);
       }
+      todoContinuationHook.handleChatMessage({
+        sessionID: input.sessionID,
+        agent,
+      });
     },
 
     // Inject orchestrator system prompt for serve-mode sessions.
@@ -501,9 +538,13 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           const { ORCHESTRATOR_PROMPT } = await import('./agents/orchestrator');
           output.system[0] =
             ORCHESTRATOR_PROMPT +
-            (output.system[0] ? '\n\n' + output.system[0] : '');
+            (output.system[0] ? `\n\n${output.system[0]}` : '');
         }
       }
+      await postFileToolNudgeHook['experimental.chat.system.transform'](
+        input,
+        output,
+      );
     },
 
     // Inject phase reminder and filter available skills before sending to API (doesn't show in UI)
