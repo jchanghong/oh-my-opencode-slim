@@ -163,7 +163,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   const delegateTaskRetryHook = createDelegateTaskRetryHook(ctx);
 
   const applyPatchHook = createApplyPatchHook(ctx);
-
   // Initialize JSON parse error recovery hook
   const jsonErrorRecoveryHook = createJsonErrorRecoveryHook(ctx);
 
@@ -470,8 +469,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         const props = input.event.properties as
           | { info?: { id?: string }; sessionID?: string }
           | undefined;
-        const sessionID =
-          props?.info?.id ?? props?.sessionID;
+        const sessionID = props?.info?.id ?? props?.sessionID;
         if (sessionID) {
           sessionAgentMap.delete(sessionID);
         }
@@ -576,6 +574,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           }>;
         }>;
       };
+      await todoContinuationHook.handleMessagesTransform({
+        messages: typedOutput.messages,
+      });
       await phaseReminderHook['experimental.chat.messages.transform'](
         input,
         typedOutput,
