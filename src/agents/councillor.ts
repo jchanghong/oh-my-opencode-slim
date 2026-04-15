@@ -1,4 +1,4 @@
-import { type AgentDefinition, resolvePrompt } from './orchestrator';
+import { type AgentDefinition, resolvePrompt } from "./orchestrator";
 
 /**
  * Councillor agent — a read-only advisor in the multi-LLM council.
@@ -31,8 +31,9 @@ You CANNOT edit files, write files, run shell commands, or delegate to \
 other agents. You are an advisor, not an implementer.
 
 **Behavior**:
-- **Examine the codebase** before answering — your read access is what makes \
-  council valuable. Don't guess at code you can see.
+- **Examine the codebase** before answering, but only if the question is clearly related to the codebase (e.g., asking about specific files, functions, or implementation details). For general knowledge questions unrelated to the codebase, answer directly without searching.
+- If you search and find no relevant results after 3 attempts, stop searching and answer based on general knowledge, prefixing your response with: "No relevant code found in the codebase."
+- Never repeat the same search pattern or path twice.
 - Analyze the problem thoroughly
 - Provide a complete, well-reasoned response
 - Focus on the quality and correctness of your solution
@@ -50,32 +51,32 @@ other agents. You are an advisor, not an implementer.
 export function createCouncillorAgent(
   model: string,
   customPrompt?: string,
-  customAppendPrompt?: string,
+  customAppendPrompt?: string
 ): AgentDefinition {
   const prompt = resolvePrompt(
     COUNCILLOR_PROMPT,
     customPrompt,
-    customAppendPrompt,
+    customAppendPrompt
   );
 
   return {
-    name: 'councillor',
+    name: "councillor",
     description:
-      'Read-only council advisor. Examines codebase and provides independent analysis. Spawned internally by the council system.',
+      "Read-only council advisor. Examines codebase and provides independent analysis. Spawned internally by the council system.",
     config: {
       model,
       temperature: 0.2,
       prompt,
       // Mirror OpenCode's explore agent: deny all, then allow read-only tools
       permission: {
-        '*': 'deny',
-        question: 'deny',
-        read: 'allow',
-        glob: 'allow',
-        grep: 'allow',
-        lsp: 'allow',
-        list: 'allow',
-        codesearch: 'allow',
+        "*": "deny",
+        question: "deny",
+        read: "allow",
+        glob: "allow",
+        grep: "allow",
+        lsp: "allow",
+        list: "allow",
+        codesearch: "allow",
       },
     },
   };
