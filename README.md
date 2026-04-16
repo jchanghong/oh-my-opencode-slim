@@ -38,6 +38,9 @@ bunx oh-my-opencode-slim@latest install --reset
 
 The default configuration uses OpenAI. To use Kimi, GitHub Copilot, or ZAI Coding Plan, see **[Provider Configurations](docs/provider-configurations.md)** for step-by-step instructions and config examples.
 
+> [!TIP]
+> Want to see the latest models OpenCode knows about? Run `opencode models --refresh` to refresh the cache and list currently available models.
+
 ### JSON Schema
 
 An official JSON Schema is included in the package for editor validation and autocomplete. Add a `$schema` reference to your config file:
@@ -342,6 +345,39 @@ If any agent fails to respond, check your provider authentication and config fil
   </tr>
 </table>
 
+### 07. Observer: The Silent Witness
+
+> [!NOTE]
+> **Why a separate agent?** Not all models support vision. Your strongest coding model (e.g. for design decisions) may not be able to read images, while a vision-capable model may not be the best for reasoning. Observer solves this by having its **own model** — configure a vision-capable model for it while keeping Designer on your strongest reasoning model. Disabled by default; enable via `disabled_agents: []` in config.
+
+<table>
+  <tr>
+    <td width="240" valign="top">
+      <b>Observer</b><br>
+      <i>Visual & binary analysis</i>
+    </td>
+    <td>
+
+**Read-only visual analysis** — interprets images, screenshots, PDFs, and diagrams. Returns structured observations to the orchestrator without loading raw file bytes into the main context window.
+
+- Images, screenshots, diagrams → `read` tool (native image support)
+- PDFs and binary documents → `read` tool (text + structure extraction)
+- **Disabled by default** — enable with `"disabled_agents": []` and configure a vision-capable model
+
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>Prompt:</b> <a href="src/agents/observer.ts"><code>observer.ts</code></a>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>Default Model:</b> <code>openai/gpt-5.4-mini</code> — <i>configure a vision-capable model to enable</i>
+    </td>
+  </tr>
+</table>
+
 ---
 
 ## 📚 Documentation
@@ -373,11 +409,12 @@ If any agent fails to respond, check your provider authentication and config fil
 
 Slim only intercepts `apply_patch` before native execution. It rewrites recoverable stale patches, canonizes safe tolerant matches against the real file when unicode/trim drift is the only mismatch, keeps the authored `new_lines` bytes intact, preserves existing file EOL/final-newline state for updates, validates malformed patches strictly before helper execution, uses a conservative bounded LCS fallback, supports sequential `Update File` hunks on the same path through accumulated helper state, and blocks `apply_patch` before the native tool runs if any patch path falls outside the allowed root/worktree. This rescue does not extend to `edit` or `write`.
 
-### 💡 Author's Setup
+### 💡 Presets
 
 | Doc | Contents |
 |-----|----------|
-| **[Author's Preset](docs/authors-preset.md)** | The exact config the author runs daily — OpenAI + Fireworks AI + GitHub Copilot |
+| **[Author's Preset](docs/authors-preset.md)** | The exact config the author runs daily — OpenAI Pro + GitHub Copilot |
+| **[$30 Preset](docs/thirty-dollars-preset.md)** | A mixed setup using Codex Plus ($20) + GitHub Copilot Pro ($10) for about $30/month total |
 
 ---
 
@@ -388,7 +425,7 @@ Slim only intercepts `apply_patch` before native execution. It rewrites recovera
   <p><sub>Every merged contribution leaves a mark on the realm.</sub></p>
 
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-37-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-38-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 </div>
 
@@ -449,6 +486,7 @@ Slim only intercepts `apply_patch` before native execution. It rewrites recovera
     </tr>
     <tr>
       <td align="center" valign="top" width="16.66%"><a href="https://github.com/dkovacevic15"><img src="https://avatars.githubusercontent.com/u/24757821?v=4?s=100" width="100px;" alt="Dusan Kovacevic"/><br /><sub><b>Dusan Kovacevic</b></sub></a><br /><a href="https://github.com/alvinunreal/oh-my-opencode-slim/commits?author=dkovacevic15" title="Code">💻</a></td>
+      <td align="center" valign="top" width="16.66%"><a href="https://github.com/jwcrystal"><img src="https://avatars.githubusercontent.com/u/121911854?v=4?s=100" width="100px;" alt="jwcrystal"/><br /><sub><b>jwcrystal</b></sub></a><br /><a href="https://github.com/alvinunreal/oh-my-opencode-slim/commits?author=jwcrystal" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
@@ -465,8 +503,3 @@ Slim only intercepts `apply_patch` before native execution. It rewrites recovera
 MIT
 
 ---
-
-<!-- MoltFounders Banner -->
-<a href="https://moltfounders.com/jobs/09d1c6e7-9e0e-4683-8d78-e2376aaa2333">
-  <img src="img/moltfounders-banner.png" alt="MoltFounders - The Agent Co-Founder Network">
-</a>
