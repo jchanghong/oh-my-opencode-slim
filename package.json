@@ -1,6 +1,6 @@
 {
   "name": "oh-my-opencode-slim",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "description": "Lightweight agent orchestration plugin for OpenCode - a slimmed-down fork of oh-my-opencode",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,14 +36,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "build:plugin": "bun build src/index.ts --outdir dist --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk",
-    "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk",
+    "build:plugin": "bun build src/index.ts --outdir dist --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk --external jsdom",
+    "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk --external jsdom",
     "build": "bun run build:plugin && bun run build:cli && tsc --emitDeclarationOnly && bun run generate-schema",
     "prepare": "bun run build",
     "contributors:add": "all-contributors add",
     "contributors:check": "all-contributors check",
     "contributors:generate": "all-contributors generate",
     "generate-schema": "bun run scripts/generate-schema.ts",
+    "verify:release": "bun run scripts/verify-release-artifact.ts",
+    "verify:host-smoke": "bun run scripts/verify-opencode-host-smoke.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "lint": "biome lint .",
