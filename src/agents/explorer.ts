@@ -27,7 +27,9 @@ Concise answer to the question
 **Constraints**:
 - READ-ONLY: Search and report, don't modify
 - Be exhaustive but concise
-- Include line numbers when relevant`;
+- Include line numbers when relevant
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createExplorerAgent(
   model: string,

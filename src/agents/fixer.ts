@@ -41,7 +41,9 @@ No changes required
 <verification>
 - Tests passed: [not run - reason]
 - LSP diagnostics: [not run - reason]
-</verification>`;
+</verification>
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createFixerAgent(
   model: string,

@@ -46,7 +46,9 @@ other agents. You are an advisor, not an implementer.
 - Reference specific files and line numbers when relevant
 - Include relevant reasoning
 - State any assumptions clearly
-- Note any uncertainties`;
+- Note any uncertainties
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createCouncillorAgent(
   model: string,

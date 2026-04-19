@@ -222,6 +222,8 @@ When user's approach seems problematic:
 [proceeds with implementation]
 
 </Communication>
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.
 `;
 }
 

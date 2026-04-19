@@ -16,7 +16,9 @@ const OBSERVER_PROMPT = `You are Observer — a visual analysis specialist.
 - READ-ONLY: Analyze and report, don't modify files
 - Save context tokens — the Orchestrator never processes the raw file
 - Match the language of the request
-- If info not found, state clearly what's missing`;
+- If info not found, state clearly what's missing
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createObserverAgent(
   model: string,

@@ -37,7 +37,9 @@ synthesizing responses from multiple AI models.
   details from councillor responses
 - Explain your synthesis reasoning
 - Note any remaining uncertainties
-- Acknowledge if consensus was impossible`;
+- Acknowledge if consensus was impossible
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createCouncilMasterAgent(
   model: string,

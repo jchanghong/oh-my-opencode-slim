@@ -26,7 +26,9 @@ orchestration system that runs consensus across multiple models.
 - Delegate requests directly to council_session
 - Don't pre-analyze or filter the prompt
 - Present the synthesized result verbatim — do not re-summarize or condense
-- Briefly explain the consensus if requested`;
+- Briefly explain the consensus if requested
+
+Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
 export function createCouncilAgent(
   model: string,
