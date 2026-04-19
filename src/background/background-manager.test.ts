@@ -1,4 +1,7 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { PluginConfig } from '../config';
 import { SLIM_INTERNAL_INITIATOR_MARKER } from '../utils';
 import { BackgroundTaskManager } from './background-manager';
@@ -301,6 +304,106 @@ describe('BackgroundTaskManager', () => {
       const result = manager.getResult(task.id);
       expect(result).toBeDefined();
       expect(result?.id).toBe(task.id);
+    });
+
+    describe('disk persistence (survives manager reinitialization)', () => {
+      let testDir: string;
+      const origEnv = process.env.OPENCODE_LOG_DIR;
+
+      beforeEach(() => {
+        testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omo-bg-test-'));
+        process.env.OPENCODE_LOG_DIR = testDir;
+      });
+
+      afterEach(() => {
+        fs.rmSync(testDir, { recursive: true, force: true });
+        if (origEnv === undefined) {
+          delete process.env.OPENCODE_LOG_DIR;
+        } else {
+          process.env.OPENCODE_LOG_DIR = origEnv;
+        }
+      });
+
+      test('completed task is retrievable by a new manager instance after reinitialization', async () => {
+        const ctx = createMockContext({
+          sessionMessagesResult: {
+            data: [
+              {
+                info: { role: 'assistant' },
+                parts: [{ type: 'text', text: 'Task result here' }],
+              },
+            ],
+          },
+        });
+
+        // First manager: completes the task
+        const manager1 = new BackgroundTaskManager(ctx);
+        const task = manager1.launch({
+          agent: 'explorer',
+          prompt: 'test',
+          description: 'Persistence test task',
+          parentSessionId: 'parent-session',
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        await manager1.handleSessionStatus({
+          type: 'session.status',
+          properties: {
+            sessionID: task.sessionId,
+            status: { type: 'idle' },
+          },
+        });
+
+        expect(task.status).toBe('completed');
+        expect(task.result).toBe('Task result here');
+
+        // Simulate reinitialization: new manager with empty in-memory state
+        const manager2 = new BackgroundTaskManager(ctx);
+
+        // Should recover from disk
+        const recovered = manager2.getResult(task.id);
+        expect(recovered).not.toBeNull();
+        expect(recovered?.id).toBe(task.id);
+        expect(recovered?.status).toBe('completed');
+        expect(recovered?.result).toBe('Task result here');
+        expect(recovered?.description).toBe('Persistence test task');
+      });
+
+      test('failed task is also recoverable after reinitialization', async () => {
+        const ctx = createMockContext({
+          sessionCreateResult: { data: {} }, // causes launch failure
+        });
+
+        const manager1 = new BackgroundTaskManager(ctx);
+        const task = manager1.launch({
+          agent: 'explorer',
+          prompt: 'test',
+          description: 'Failing task',
+          parentSessionId: 'parent-session',
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(task.status).toBe('failed');
+
+        const manager2 = new BackgroundTaskManager(ctx);
+        const recovered = manager2.getResult(task.id);
+        expect(recovered).not.toBeNull();
+        expect(recovered?.status).toBe('failed');
+        expect(recovered?.error).toBe('Failed to create background session');
+      });
+
+      test('returns null for task that never completed (no disk file)', () => {
+        const ctx = createMockContext();
+        const manager = new BackgroundTaskManager(ctx);
+
+        // Task that was only launched on a previous (lost) manager
+        const result = manager.getResult('bg_nonexistent99');
+        expect(result).toBeNull();
+      });
     });
   });
 
@@ -746,6 +849,112 @@ describe('BackgroundTaskManager', () => {
           SLIM_INTERNAL_INITIATOR_MARKER,
         ),
       ).toBe(true);
+    });
+
+    test('sends completion notification to parent with parent agent', async () => {
+      const ctx = createMockContext({
+        sessionMessagesResult: {
+          data: [
+            {
+              info: { role: 'assistant' },
+              parts: [{ type: 'text', text: 'done' }],
+            },
+          ],
+        },
+      });
+
+      const manager = new BackgroundTaskManager(ctx);
+
+      // Create a tracked orchestrator parent session
+      const parentTask = manager.launch({
+        agent: 'orchestrator',
+        prompt: 'orchestrate',
+        description: 'parent orchestration',
+        parentSessionId: 'root-session',
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const parentSessionId = parentTask.sessionId;
+      if (!parentSessionId) throw new Error('Expected parent session id');
+
+      // Launch nested subagent under orchestrator
+      const childTask = manager.launch({
+        agent: 'explorer',
+        prompt: 'collect tests',
+        description: 'nested subagent',
+        parentSessionId,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await manager.handleSessionStatus({
+        type: 'session.status',
+        properties: {
+          sessionID: childTask.sessionId,
+          status: { type: 'idle' },
+        },
+      });
+
+      const promptCalls = ctx.client.session.prompt.mock.calls as Array<{
+        path: { id: string };
+        body: { agent?: string; parts: Array<{ text?: string }> };
+      }>;
+
+      const notificationCall = promptCalls.find(
+        (c) => c[0].path.id === parentSessionId,
+      );
+
+      expect(notificationCall).toBeDefined();
+      expect(notificationCall?.[0].body.agent).toBe('orchestrator');
+    });
+
+    test('sends completion notification using orchestrator for untracked parent', async () => {
+      const ctx = createMockContext({
+        sessionMessagesResult: {
+          data: [
+            {
+              info: { role: 'assistant' },
+              parts: [{ type: 'text', text: 'done' }],
+            },
+          ],
+        },
+      });
+
+      const manager = new BackgroundTaskManager(ctx);
+      const untrackedParentId = 'unknown-root';
+
+      const childTask = manager.launch({
+        agent: 'explorer',
+        prompt: 'collect tests',
+        description: 'orphan child',
+        parentSessionId: untrackedParentId,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await manager.handleSessionStatus({
+        type: 'session.status',
+        properties: {
+          sessionID: childTask.sessionId,
+          status: { type: 'idle' },
+        },
+      });
+
+      const promptCalls = ctx.client.session.prompt.mock.calls as Array<{
+        path: { id: string };
+        body: { agent?: string };
+      }>;
+
+      const notificationCall = promptCalls.find(
+        (c) => c[0].path.id === untrackedParentId,
+      );
+
+      expect(notificationCall).toBeDefined();
+      expect(notificationCall?.[0].body.agent).toBe('orchestrator');
     });
 
     test('retries next fallback model when first model returns empty response', async () => {
