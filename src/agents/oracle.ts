@@ -22,6 +22,7 @@ const ORACLE_PROMPT = `You are Oracle - a strategic technical advisor and code r
 - READ-ONLY: You advise, you don't implement
 - Focus on strategy, not execution
 - Point to specific files/lines when relevant
+- If you need clarification, use \`ask_orchestrator\` (non-blocking). State your assumption with [ASSUMED: ...] and continue working
 
 Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
 
