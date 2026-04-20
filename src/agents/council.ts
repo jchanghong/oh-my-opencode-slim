@@ -1,5 +1,5 @@
-import { shortModelLabel } from "../utils/session";
-import { type AgentDefinition, resolvePrompt } from "./orchestrator";
+import { shortModelLabel } from '../utils/session';
+import { type AgentDefinition, resolvePrompt } from './orchestrator';
 
 // NOTE: Councillor and master system prompts live in their respective agent
 // factories (councillor.ts, council-master.ts). The format functions below
@@ -23,6 +23,7 @@ orchestration system that runs consensus across multiple models.
 4. Present the result to the user
 
 **Behavior**:
+- Use parallel tool calls by default whenever dependencies allow
 - Delegate requests directly to council_session
 - Don't pre-analyze or filter the prompt
 - Present the synthesized result verbatim — do not re-summarize or condense
@@ -31,18 +32,18 @@ orchestration system that runs consensus across multiple models.
 export function createCouncilAgent(
   model: string,
   customPrompt?: string,
-  customAppendPrompt?: string
+  customAppendPrompt?: string,
 ): AgentDefinition {
   const prompt = resolvePrompt(
     COUNCIL_AGENT_PROMPT,
     customPrompt,
-    customAppendPrompt
+    customAppendPrompt,
   );
 
   const definition: AgentDefinition = {
-    name: "council",
+    name: 'council',
     description:
-      "Multi-LLM council agent that synthesizes responses from multiple models for higher-quality outputs",
+      'Multi-LLM council agent that synthesizes responses from multiple models for higher-quality outputs',
     config: {
       temperature: 0.1,
       prompt,
@@ -69,7 +70,7 @@ export function createCouncilAgent(
  */
 export function formatCouncillorPrompt(
   userPrompt: string,
-  councillorPrompt?: string
+  councillorPrompt?: string,
 ): string {
   if (!councillorPrompt) return userPrompt;
   return `${councillorPrompt}\n\n---\n\n${userPrompt}`;
@@ -93,10 +94,10 @@ export function formatMasterSynthesisPrompt(
     result?: string;
     error?: string;
   }>,
-  masterPrompt?: string
+  masterPrompt?: string,
 ): string {
   const completedWithResults = councillorResults.filter(
-    (cr) => cr.status === "completed" && cr.result
+    (cr) => cr.status === 'completed' && cr.result,
   );
 
   const councillorSection = completedWithResults
@@ -104,12 +105,12 @@ export function formatMasterSynthesisPrompt(
       const shortModel = shortModelLabel(cr.model);
       return `**${cr.name}** (${shortModel}):\n${cr.result}`;
     })
-    .join("\n\n");
+    .join('\n\n');
 
   const failedSection = councillorResults
-    .filter((cr) => cr.status !== "completed")
-    .map((cr) => `**${cr.name}**: ${cr.status} — ${cr.error ?? "Unknown"}`)
-    .join("\n");
+    .filter((cr) => cr.status !== 'completed')
+    .map((cr) => `**${cr.name}**: ${cr.status} — ${cr.error ?? 'Unknown'}`)
+    .join('\n');
 
   if (completedWithResults.length === 0) {
     return `---\n\n**Original Prompt**:\n${originalPrompt}\n\n---\n\n**Councillor Responses**:\nAll councillors failed to produce output. Please generate a response based on the original prompt alone.`;
@@ -121,7 +122,7 @@ export function formatMasterSynthesisPrompt(
     prompt += `\n\n---\n\n**Failed/Timed-out Councillors**:\n${failedSection}`;
   }
 
-  prompt += "\n\n---\n\nSynthesize the optimal response based on the above.";
+  prompt += '\n\n---\n\nSynthesize the optimal response based on the above.';
 
   if (masterPrompt) {
     prompt += `\n\n---\n\n**Master Guidance**:\n${masterPrompt}`;

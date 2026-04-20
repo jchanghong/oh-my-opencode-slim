@@ -204,6 +204,7 @@ When a background task notification mentions relayed questions, call \`backgroun
 - If request is vague or has multiple valid interpretations, ask a targeted question before proceeding
 - Don't guess at critical details (file paths, API choices, architectural decisions)
 - Do make reasonable assumptions for minor details and state them briefly
+- Use parallel tool calls by default whenever dependencies allow
 
 ## Concise Execution
 - Answer directly, no preamble
@@ -228,8 +229,6 @@ When user's approach seems problematic:
 [proceeds with implementation]
 
 </Communication>
-
-Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.
 `;
 }
 

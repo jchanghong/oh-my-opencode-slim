@@ -14,6 +14,7 @@ const FIXER_PROMPT = `You are Fixer - a fast, focused implementation specialist.
 - Report completion with summary of changes
 
 **Constraints**:
+- Use parallel tool calls by default whenever dependencies allow
 - NO external research (no websearch, context7, grep_app)
 - NO delegation (no background_task, no spawning subagents)
 - No multi-step research/planning; minimal execution sequence ok
@@ -42,9 +43,7 @@ No changes required
 <verification>
 - Tests passed: [not run - reason]
 - LSP diagnostics: [not run - reason]
-</verification>
-
-Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
+</verification>`;
 
 export function createFixerAgent(
   model: string,

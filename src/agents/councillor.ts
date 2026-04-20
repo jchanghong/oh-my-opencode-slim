@@ -34,6 +34,7 @@ other agents. You are an advisor, not an implementer.
 - **Examine the codebase** before answering, but only if the question is clearly related to the codebase (e.g., asking about specific files, functions, or implementation details). For general knowledge questions unrelated to the codebase, answer directly without searching.
 - If you search and find no relevant results after 3 attempts, stop searching and answer based on general knowledge, prefixing your response with: "No relevant code found in the codebase."
 - Never repeat the same search pattern or path twice.
+- Use parallel tool calls by default whenever dependencies allow
 - Analyze the problem thoroughly
 - Provide a complete, well-reasoned response
 - Focus on the quality and correctness of your solution
@@ -46,39 +47,37 @@ other agents. You are an advisor, not an implementer.
 - Reference specific files and line numbers when relevant
 - Include relevant reasoning
 - State any assumptions clearly
-- Note any uncertainties
-
-Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
+- Note any uncertainties`;
 
 export function createCouncillorAgent(
   model: string,
   customPrompt?: string,
-  customAppendPrompt?: string
+  customAppendPrompt?: string,
 ): AgentDefinition {
   const prompt = resolvePrompt(
     COUNCILLOR_PROMPT,
     customPrompt,
-    customAppendPrompt
+    customAppendPrompt,
   );
 
   return {
-    name: "councillor",
+    name: 'councillor',
     description:
-      "Read-only council advisor. Examines codebase and provides independent analysis. Spawned internally by the council system.",
+      'Read-only council advisor. Examines codebase and provides independent analysis. Spawned internally by the council system.',
     config: {
       model,
       temperature: 0.2,
       prompt,
       // Mirror OpenCode's explore agent: deny all, then allow read-only tools
       permission: {
-        "*": "deny",
-        question: "deny",
-        read: "allow",
-        glob: "allow",
-        grep: "allow",
-        lsp: "allow",
-        list: "allow",
-        codesearch: "allow",
+        '*': 'deny',
+        question: 'deny',
+        read: 'allow',
+        glob: 'allow',
+        grep: 'allow',
+        lsp: 'allow',
+        list: 'allow',
+        codesearch: 'allow',
       },
     },
   };

@@ -55,9 +55,7 @@ const DESIGNER_PROMPT = `You are a Designer - a frontend UI/UX specialist who cr
 - When validating, focus on what users actually see and feel
 
 ## Output Quality
-You're capable of extraordinary creative work. Commit fully to distinctive visions and show what's possible when breaking conventions thoughtfully.
-
-Use parallel tool calls by default whenever dependencies allow. Batch-read all relevant files as early as possible to minimize round trips and avoid fragmented context.`;
+You're capable of extraordinary creative work. Commit fully to distinctive visions and show what's possible when breaking conventions thoughtfully.`;
 
 export function createDesignerAgent(
   model: string,
