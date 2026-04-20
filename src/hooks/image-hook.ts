@@ -73,6 +73,9 @@ function sanitizeFilename(name: string): string {
 
 function cleanupOldImages(dir: string, saveDir: string): void {
   const now = Date.now();
+  if (!lastCleanupByDir.has(dir) && existsSync(dir)) {
+    lastCleanupByDir.set(dir, now);
+  }
   const lastCleanup = lastCleanupByDir.get(dir) ?? 0;
   if (now - lastCleanup < CLEANUP_INTERVAL) return;
   lastCleanupByDir.set(dir, now);
@@ -104,6 +107,9 @@ function writeUniqueFile(
   const ext = extname(name);
   const base = basename(name, ext) || name;
   let candidate = join(dir, name);
+  if (existsSync(candidate)) {
+    return candidate;
+  }
   let counter = 0;
 
   const MAX_ATTEMPTS = 1000;
