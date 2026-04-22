@@ -1,7 +1,6 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
 import { buildOrchestratorPrompt } from './agents/orchestrator';
-import { BackgroundTaskManager, MultiplexerSessionManager } from './background';
 import { loadPluginConfig, type MultiplexerConfig } from './config';
 import { parseList } from './config/agent-mcps';
 import { CouncilManager } from './council';
@@ -20,21 +19,20 @@ import {
 import { processImageAttachments } from './hooks/image-hook';
 import { createInterviewManager } from './interview';
 import { createBuiltinMcps } from './mcp';
-import { getMultiplexer, startAvailabilityCheck } from './multiplexer';
+import {
+  getMultiplexer,
+  MultiplexerSessionManager,
+  startAvailabilityCheck,
+} from './multiplexer';
 import {
   ast_grep_replace,
   ast_grep_search,
-  createBackgroundTools,
   createCouncilTool,
   createWebfetchTool,
-  lsp_diagnostics,
-  lsp_find_references,
-  lsp_goto_definition,
-  lsp_rename,
-  setUserLspConfig,
 } from './tools';
 import { resolveRuntimeAgentName, rewriteDisplayNameMentions } from './utils';
 import { initLogger, log } from './utils/logger';
+import { SubagentDepthTracker } from './utils/subagent-depth';
 
 /**
  * Best-effort log to opencode's app logger.
@@ -95,7 +93,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let runtimeChains: Record<string, string[]>;
   let multiplexerConfig: MultiplexerConfig;
   let multiplexerEnabled: boolean;
-  let backgroundManager: BackgroundTaskManager;
+  let depthTracker: SubagentDepthTracker;
   let multiplexerSessionManager: MultiplexerSessionManager;
   let autoUpdateChecker: ReturnType<typeof createAutoUpdateCheckerHook>;
   let phaseReminderHook: ReturnType<typeof createPhaseReminderHook>;
@@ -111,7 +109,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let foregroundFallback: ForegroundFallbackManager;
   let todoContinuationHook: ReturnType<typeof createTodoContinuationHook>;
   let interviewManager: ReturnType<typeof createInterviewManager>;
-  let backgroundTools: ReturnType<typeof createBackgroundTools>;
   let councilTools: Record<string, unknown>;
   let webfetch: ReturnType<typeof createWebfetchTool>;
 
@@ -185,28 +182,13 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       startAvailabilityCheck(multiplexerConfig);
     }
 
-    backgroundManager = new BackgroundTaskManager(
-      ctx,
-      multiplexerConfig,
-      config,
-    );
-    backgroundTools = createBackgroundTools(
-      ctx,
-      backgroundManager,
-      multiplexerConfig,
-      config,
-    );
+    depthTracker = new SubagentDepthTracker();
 
     // Initialize council tools (only when council is configured)
     councilTools = config.council
       ? createCouncilTool(
           ctx,
-          new CouncilManager(
-            ctx,
-            config,
-            backgroundManager.getDepthTracker(),
-            multiplexerEnabled,
-          ),
+          new CouncilManager(ctx, config, depthTracker, multiplexerEnabled),
         )
       : {};
 
@@ -269,11 +251,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     interviewManager = createInterviewManager(ctx, config);
 
     toolCount =
-      Object.keys(backgroundTools).length +
       Object.keys(councilTools).length +
       Object.keys(todoContinuationHook.tool).length +
       1 + // webfetch
-      4 + // lsp_goto_definition, lsp_find_references, lsp_diagnostics, lsp_rename
       2; // ast_grep_search, ast_grep_replace
   } catch (err) {
     // Plugin init failed: log visibly before re-throwing so the user
@@ -337,14 +317,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     agent: agents,
 
     tool: {
-      ...backgroundTools,
       ...councilTools,
       webfetch,
       ...todoContinuationHook.tool,
-      lsp_goto_definition,
-      lsp_find_references,
-      lsp_diagnostics,
-      lsp_rename,
       ast_grep_search,
       ast_grep_replace,
     },
@@ -352,12 +327,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     mcp: mcps,
 
     config: async (opencodeConfig: Record<string, unknown>) => {
-      // Set user's lsp config from opencode.json for LSP tools
-      const lspConfig = opencodeConfig.lsp as
-        | Record<string, unknown>
-        | undefined;
-      setUserLspConfig(lspConfig);
-
       // Only set default_agent if not already configured by the user
       // and the plugin config doesn't explicitly disable this behavior
       if (
@@ -554,6 +523,23 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     },
 
     event: async (input) => {
+      const event = input.event as {
+        type: string;
+        properties?: {
+          info?: { id?: string; parentID?: string; title?: string };
+          sessionID?: string;
+          status?: { type: string };
+        };
+      };
+
+      if (event.type === 'session.created') {
+        const childSessionId = event.properties?.info?.id;
+        const parentSessionId = event.properties?.info?.parentID;
+        if (depthTracker && childSessionId && parentSessionId) {
+          depthTracker.registerChild(parentSessionId, childSessionId);
+        }
+      }
+
       // Runtime model fallback for foreground agents (rate-limit detection)
       await foregroundFallback.handleEvent(input.event);
 
@@ -564,46 +550,13 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       await autoUpdateChecker.event(input);
 
       // Handle multiplexer pane spawning for OpenCode's Task tool sessions
-      await multiplexerSessionManager.onSessionCreated(
-        input.event as {
-          type: string;
-          properties?: {
-            info?: { id?: string; parentID?: string; title?: string };
-          };
-        },
-      );
+      await multiplexerSessionManager.onSessionCreated(event);
 
-      // Handle session.status events for:
-      // 1. BackgroundTaskManager: completion detection
-      // 2. MultiplexerSessionManager: pane cleanup
-      await backgroundManager.handleSessionStatus(
-        input.event as {
-          type: string;
-          properties?: { sessionID?: string; status?: { type: string } };
-        },
-      );
-      await multiplexerSessionManager.onSessionStatus(
-        input.event as {
-          type: string;
-          properties?: { sessionID?: string; status?: { type: string } };
-        },
-      );
+      // Handle session.status events for pane cleanup
+      await multiplexerSessionManager.onSessionStatus(event);
 
-      // Handle session.deleted events for:
-      // 1. BackgroundTaskManager: task cleanup
-      // 2. MultiplexerSessionManager: pane cleanup
-      await backgroundManager.handleSessionDeleted(
-        input.event as {
-          type: string;
-          properties?: { info?: { id?: string }; sessionID?: string };
-        },
-      );
-      await multiplexerSessionManager.onSessionDeleted(
-        input.event as {
-          type: string;
-          properties?: { sessionID?: string };
-        },
-      );
+      // Handle session.deleted events for pane cleanup
+      await multiplexerSessionManager.onSessionDeleted(event);
 
       await interviewManager.handleEvent(
         input as {
@@ -628,6 +581,10 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           | { info?: { id?: string }; sessionID?: string }
           | undefined;
         const sessionID = props?.info?.id ?? props?.sessionID;
+
+        if (depthTracker && sessionID) {
+          depthTracker.cleanup(sessionID);
+        }
         if (sessionID) {
           sessionAgentMap.delete(sessionID);
         }

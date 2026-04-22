@@ -9,7 +9,7 @@ Complete reference for all configuration files and options in oh-my-opencode-sli
 | File | Purpose |
 |------|---------|
 | `~/.config/opencode/opencode.json` | OpenCode core settings (plugin registration, providers) |
-| `~/.config/opencode/oh-my-opencode-slim.json` | Plugin settings — agents, tmux, MCPs, council |
+| `~/.config/opencode/oh-my-opencode-slim.json` | Plugin settings — agents, multiplexer, MCPs, council |
 | `~/.config/opencode/oh-my-opencode-slim.jsonc` | Same, but with JSONC (comments + trailing commas). Takes precedence over `.json` if both exist |
 | `.opencode/oh-my-opencode-slim.json` | Project-local overrides (optional, checked first) |
 
@@ -68,8 +68,8 @@ All config files support **JSONC** (JSON with Comments):
     },
   },
 
-  "tmux": {
-    "enabled": true,  // Enable pane monitoring
+  "multiplexer": {
+    "type": "tmux",
     "layout": "main-vertical",
   },
 }
@@ -90,39 +90,37 @@ All config files support **JSONC** (JSON with Comments):
 | `presets.<name>.<agent>.skills` | string[] | — | Skills the agent can use (`"*"`, `"!item"`, explicit list) |
 | `presets.<name>.<agent>.mcps` | string[] | — | MCPs the agent can use (`"*"`, `"!item"`, explicit list) |
 | `presets.<name>.<agent>.options` | object | — | Provider-specific model options passed to the AI SDK (e.g., `textVerbosity`, `thinking` budget) |
+| `agents.<customAgent>.model` | string\|array | — | Required for custom agents inferred from unknown `agents` keys |
+| `agents.<customAgent>.prompt` | string | — | Full execution prompt for a custom agent |
+| `agents.<customAgent>.orchestratorPrompt` | string | — | Exact `@agent` block injected into the orchestrator prompt; must start with `@<agent-name>` |
 | `agents.<agent>.displayName` | string | — | Custom user-facing alias for the agent in the active config |
 | `showStartupToast` | boolean | `true` | Show the startup activation toast (`oh-my-opencode-slim is active`) when OpenCode starts |
-| `tmux.enabled` | boolean | `false` | Enable tmux pane spawning |
-| `tmux.layout` | string | `"main-vertical"` | Layout: `main-vertical`, `main-horizontal`, `tiled`, `even-horizontal`, `even-vertical` |
-| `tmux.main_pane_size` | number | `60` | Main pane size as percentage (20–80) |
+| `multiplexer.type` | string | `"none"` | Multiplexer mode: `auto`, `tmux`, `zellij`, or `none` |
+| `multiplexer.layout` | string | `"main-vertical"` | Layout preset: `main-vertical`, `main-horizontal`, `tiled`, `even-horizontal`, `even-vertical` |
+| `multiplexer.main_pane_size` | number | `60` | Main pane size as percentage (20–80) |
+| `tmux.enabled` | boolean | `false` | Legacy alias for `multiplexer.type = "tmux"` |
+| `tmux.layout` | string | `"main-vertical"` | Legacy alias for `multiplexer.layout` |
+| `tmux.main_pane_size` | number | `60` | Legacy alias for `multiplexer.main_pane_size` |
 | `disabled_mcps` | string[] | `[]` | MCP server IDs to disable globally |
 | `fallback.enabled` | boolean | `false` | Enable model failover on timeout/error |
 | `fallback.timeoutMs` | number | `15000` | Time before aborting and trying next model |
 | `fallback.retryDelayMs` | number | `500` | Delay between retry attempts |
 | `fallback.chains.<agent>` | string[] | — | Ordered fallback model IDs for an agent |
-| `fallback.retry_on_empty` | boolean | `true` | Treat silent empty provider responses (0 tokens) as failures and retry. Set `false` to accept empty responses |
-| `council.master.model` | string | — | **Required if using council.** Council master model |
-| `council.master.variant` | string | — | Council master variant |
-| `council.master.prompt` | string | — | Optional synthesis guidance for the master |
-| `council.presets` | object | — | **Required if using council.** Named councillor presets |
-| `council.presets.<name>.<councillor>.model` | string | — | Councillor model |
-| `council.presets.<name>.<councillor>.variant` | string | — | Councillor variant |
-| `council.presets.<name>.<councillor>.prompt` | string | — | Optional role guidance for the councillor |
-| `council.presets.<name>.master.model` | string | — | Override global master model for this preset |
-| `council.presets.<name>.master.variant` | string | — | Override global master variant for this preset |
-| `council.presets.<name>.master.prompt` | string | — | Override global master prompt for this preset |
-| `council.default_preset` | string | `"default"` | Default preset when none is specified |
-| `council.master_timeout` | number | `300000` | Master synthesis timeout (ms) |
-| `council.councillors_timeout` | number | `180000` | Per-councillor timeout (ms) |
-| `council.master_fallback` | string[] | — | Fallback models for the council master |
-| `council.councillor_retries` | number | `3` | Max retries per councillor and master on empty provider response (0–5) |
+ | `fallback.retry_on_empty` | boolean | `true` | Treat silent empty provider responses (0 tokens) as failures and retry. Set `false` to accept empty responses |
+ | `council.presets` | object | — | **Required if using council.** Named councillor presets |
+ | `council.presets.<name>.<councillor>.model` | string | — | Councillor model |
+ | `council.presets.<name>.<councillor>.variant` | string | — | Councillor variant |
+ | `council.presets.<name>.<councillor>.prompt` | string | — | Optional role guidance for the councillor |
+ | `council.default_preset` | string | `"default"` | Default preset when none is specified |
+ | `council.timeout` | number | `180000` | Councillor timeout (ms) |
+ | `council.councillor_retries` | number | `3` | Max retries per councillor on empty provider response (0–5) |
 | `todoContinuation.maxContinuations` | integer | `5` | Max consecutive auto-continuations before stopping (1–50) |
 | `todoContinuation.cooldownMs` | integer | `3000` | Delay in ms before auto-continuing — gives user time to abort (0–30000) |
 | `todoContinuation.autoEnable` | boolean | `false` | Automatically enable auto-continue when session has enough todos |
 | `todoContinuation.autoEnableThreshold` | integer | `4` | Number of todos that triggers auto-enable (only used when `autoEnable` is true, 1–50) |
 | `interview.maxQuestions` | integer | `2` | Max questions per interview round (1–10) |
 | `interview.outputFolder` | string | `"interview"` | Directory where interview markdown files are written (relative to project root) |
-| `interview.autoOpenBrowser` | boolean | `true` | Automatically open the interview UI in your default browser |
+| `interview.autoOpenBrowser` | boolean | `true` | Automatically open the interview UI in your default browser during interactive runs; suppressed in tests and CI |
 | `interview.port` | integer | `0` | Interview server port (0–65535). `0` = OS-assigned random port (per-session mode). Any value > 0 enables [dashboard mode](interview.md#dashboard-mode) |
 | `interview.dashboard` | boolean | `false` | Enable [dashboard mode](interview.md#dashboard-mode) on the default port (43211). Setting `port` > 0 also enables dashboard mode. If both are set, `port` takes precedence |
 
@@ -164,3 +162,27 @@ Notes:
 - `@` prefixes and surrounding whitespace are normalized automatically
 - Display names must be unique
 - Display names cannot conflict with internal agent names like `oracle` or `explorer`
+
+### Custom Agents
+
+Unknown keys under `agents` are treated as custom subagents. A custom agent needs
+its own `model`, a normal `prompt`, and optionally an `orchestratorPrompt` that
+teaches the orchestrator exactly when to delegate to it.
+
+```jsonc
+{
+  "agents": {
+    "janitor": {
+      "model": "github-copilot/gpt-5.4",
+      "prompt": "You are Janitor. Audit codebase entropy, dead code, docs drift, naming inconsistencies, and unnecessary complexity. Prefer analysis and plans over direct edits.",
+      "orchestratorPrompt": "@janitor\n- Role: Maintenance specialist for codebase cleanup and entropy reduction\n- **Delegate when:** after large refactors • cleanup/technical-debt review • dead code or docs drift is suspected\n- **Don't delegate when:** feature implementation • urgent debugging • UI/UX work"
+    }
+  }
+}
+```
+
+Notes:
+
+- Custom agent names must be safe identifiers such as `janitor` or `security-reviewer`
+- Custom agents without a `model` are skipped with a warning
+- Disabled custom agents are not registered or injected into the orchestrator prompt

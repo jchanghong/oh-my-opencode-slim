@@ -8,23 +8,6 @@ Slim only intercepts `apply_patch` before the native tool runs. It rewrites reco
 
 ---
 
-## Background Tasks
-
-Launch agents asynchronously and collect results later. This is how the Orchestrator runs Explorer, Librarian, and other sub-agents in parallel without blocking.
-
-| Tool | Description |
-|------|-------------|
-| `background_task` | Launch an agent in a new session. `sync=true` blocks until complete; `sync=false` returns a task ID immediately |
-| `background_output` | Fetch the result of a background task by ID. Surfaces questions relayed from subagents |
-| `background_cancel` | Abort a running background task |
-| `ask_orchestrator` | Non-blocking question relay for background subagents. Records a question for orchestrator review without waiting for an answer. Subagents state their assumption via `[ASSUMED: ...]` markers and continue working |
-
-Background subagents have the built-in `question` tool disabled (`question: false`) to prevent sessions from blocking on user input that never arrives. Instead, subagents use `ask_orchestrator` to relay questions to the orchestrator, who evaluates them when retrieving results via `background_output`.
-
-Background tasks integrate with [Multiplexer Integration](multiplexer-integration.md) — when multiplexer support is enabled, each background task spawns a pane so you can watch it live.
-
----
-
 ## Web Fetch
 
 Fetch remote pages with content extraction tuned for docs/static sites.
@@ -34,21 +17,6 @@ Fetch remote pages with content extraction tuned for docs/static sites.
 | `webfetch` | Fetch a URL, optionally prefer `llms.txt`, extract main content from HTML, include metadata, and optionally save binary responses |
 
 `webfetch` blocks cross-origin redirects unless the requested URL or derived permission patterns explicitly allow them, and it can fall back to the raw fetched content when secondary-model summarization is unavailable.
-
----
-
-## LSP Tools
-
-Language Server Protocol integration for code intelligence across 30+ languages. OpenCode ships pre-configured LSP servers for TypeScript, Python, Rust, Go, and more.
-
-| Tool | Description |
-|------|-------------|
-| `lsp_goto_definition` | Jump to a symbol's definition |
-| `lsp_find_references` | Find all usages of a symbol across the workspace |
-| `lsp_diagnostics` | Get errors and warnings from the language server |
-| `lsp_rename` | Rename a symbol across all files atomically |
-
-> See the [official OpenCode docs](https://opencode.ai/docs/lsp/#built-in) for the full list of built-in LSP servers and their requirements.
 
 ---
 

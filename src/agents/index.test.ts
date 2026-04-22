@@ -4,6 +4,7 @@ import {
   AgentOverrideConfigSchema,
   DEFAULT_DISABLED_AGENTS,
   DEFAULT_MODELS,
+  PluginConfigSchema,
   SUBAGENT_NAMES,
 } from '../config';
 import {
@@ -129,6 +130,14 @@ describe('orchestrator agent', () => {
     expect((orchestrator?.config.permission as any).question).toBe('allow');
   });
 
+  test('orchestrator is denied access to council_session', () => {
+    const agents = createAgents();
+    const orchestrator = agents.find((a) => a.name === 'orchestrator');
+    expect((orchestrator?.config.permission as any).council_session).toBe(
+      'deny',
+    );
+  });
+
   test('orchestrator accepts overrides', () => {
     const config: PluginConfig = {
       agents: {
@@ -219,7 +228,7 @@ describe('per-model variant in array config', () => {
 });
 
 describe('skill permissions', () => {
-  test('orchestrator gets cartography skill allowed by default', () => {
+  test('orchestrator gets codemap skill allowed by default', () => {
     const agents = createAgents();
     const orchestrator = agents.find((a) => a.name === 'orchestrator');
     expect(orchestrator).toBeDefined();
@@ -228,17 +237,17 @@ describe('skill permissions', () => {
     )?.skill as Record<string, string>;
     // orchestrator gets wildcard allow (from RECOMMENDED_SKILLS wildcard entry)
     expect(skillPerm?.['*']).toBe('allow');
-    // CUSTOM_SKILLS loop must also add a named cartography entry for orchestrator
-    expect(skillPerm?.cartography).toBe('allow');
+    // CUSTOM_SKILLS loop must also add a named codemap entry for orchestrator
+    expect(skillPerm?.codemap).toBe('allow');
   });
 
-  test('explorer gets cartography skill allowed by default', () => {
+  test('fixer does not get codemap skill allowed by default', () => {
     const agents = createAgents();
-    const explorer = agents.find((a) => a.name === 'explorer');
-    expect(explorer).toBeDefined();
-    const skillPerm = (explorer?.config.permission as Record<string, unknown>)
+    const fixer = agents.find((a) => a.name === 'fixer');
+    expect(fixer).toBeDefined();
+    const skillPerm = (fixer?.config.permission as Record<string, unknown>)
       ?.skill as Record<string, string>;
-    expect(skillPerm?.cartography).toBe('allow');
+    expect(skillPerm?.codemap).not.toBe('allow');
   });
 
   test('oracle gets requesting-code-review skill allowed by default', () => {
@@ -257,6 +266,32 @@ describe('skill permissions', () => {
     const skillPerm = (oracle?.config.permission as Record<string, unknown>)
       ?.skill as Record<string, string>;
     expect(skillPerm?.simplify).toBe('allow');
+  });
+});
+
+describe('tool permissions', () => {
+  test('council agent is allowed to invoke council_session', () => {
+    const agents = createAgents();
+    const council = agents.find((a) => a.name === 'council');
+    expect((council?.config.permission as any).council_session).toBe('allow');
+  });
+
+  test('oracle is denied access to council_session', () => {
+    const agents = createAgents();
+    const oracle = agents.find((a) => a.name === 'oracle');
+    expect((oracle?.config.permission as any).council_session).toBe('deny');
+  });
+
+  test('explorer is denied access to council_session', () => {
+    const agents = createAgents();
+    const explorer = agents.find((a) => a.name === 'explorer');
+    expect((explorer?.config.permission as any).council_session).toBe('deny');
+  });
+
+  test('councillor is denied access to council_session', () => {
+    const agents = createAgents();
+    const councillor = agents.find((a) => a.name === 'councillor');
+    expect((councillor?.config.permission as any).council_session).toBe('deny');
   });
 });
 
@@ -318,9 +353,9 @@ describe('createAgents', () => {
     expect(names).toContain('fixer');
   });
 
-  test('creates exactly 9 agents by default (1 orchestrator + 8 subagents, observer disabled)', () => {
+  test('creates exactly 8 agents by default (1 orchestrator + 7 subagents, observer disabled)', () => {
     const agents = createAgents();
-    expect(agents.length).toBe(9);
+    expect(agents.length).toBe(8);
   });
 });
 
@@ -342,76 +377,13 @@ describe('getAgentConfigs', () => {
 });
 
 describe('council agent model resolution', () => {
-  test('council agent uses config.council.master.model', () => {
-    const config = {
-      council: {
-        master: { model: 'anthropic/claude-sonnet-4-6' },
-        presets: {
-          default: {
-            councillors: {
-              alpha: { model: 'test/alpha-model' },
-            },
-            master: undefined,
-          },
-        },
-      },
-    } as unknown as PluginConfig;
-    const agents = createAgents(config);
-    const council = agents.find((a) => a.name === 'council');
-    expect(council?.config.model).toBe('anthropic/claude-sonnet-4-6');
-  });
-
-  test('council agent falls back to default without council config', () => {
+  test('council agent uses default model', () => {
     const agents = createAgents();
     const council = agents.find((a) => a.name === 'council');
     expect(council?.config.model).toBe(DEFAULT_MODELS.council);
   });
 
-  test('council-master agent uses config.council.master.model', () => {
-    const config = {
-      council: {
-        master: { model: 'anthropic/claude-sonnet-4-6' },
-        presets: {
-          default: {
-            councillors: {
-              alpha: { model: 'test/alpha-model' },
-            },
-            master: undefined,
-          },
-        },
-      },
-    } as unknown as PluginConfig;
-    const agents = createAgents(config);
-    const councilMaster = agents.find((a) => a.name === 'council-master');
-    expect(councilMaster?.config.model).toBe('anthropic/claude-sonnet-4-6');
-  });
-
-  test('council-master agent falls back to default without council config', () => {
-    const agents = createAgents();
-    const councilMaster = agents.find((a) => a.name === 'council-master');
-    expect(councilMaster?.config.model).toBe(DEFAULT_MODELS['council-master']);
-  });
-
-  test('councillor agent uses config.council.master.model', () => {
-    const config = {
-      council: {
-        master: { model: 'anthropic/claude-sonnet-4-6' },
-        presets: {
-          default: {
-            councillors: {
-              alpha: { model: 'test/alpha-model' },
-            },
-            master: undefined,
-          },
-        },
-      },
-    } as unknown as PluginConfig;
-    const agents = createAgents(config);
-    const councillor = agents.find((a) => a.name === 'councillor');
-    expect(councillor?.config.model).toBe('anthropic/claude-sonnet-4-6');
-  });
-
-  test('councillor agent falls back to default without council config', () => {
+  test('councillor agent uses default model', () => {
     const agents = createAgents();
     const councillor = agents.find((a) => a.name === 'councillor');
     expect(councillor?.config.model).toBe(DEFAULT_MODELS.councillor);
@@ -565,6 +537,109 @@ describe('AgentOverrideConfigSchema options validation', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  test('rejects empty model arrays', () => {
+    const result = AgentOverrideConfigSchema.safeParse({
+      model: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test('accepts prompt and orchestratorPrompt override fields', () => {
+    const result = AgentOverrideConfigSchema.safeParse({
+      model: 'openai/gpt-5.4',
+      prompt: 'You are a specialized reviewer.',
+      orchestratorPrompt: '@reviewer\n- Role: Specialized reviewer',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.prompt).toBe('You are a specialized reviewer.');
+      expect(result.data.orchestratorPrompt).toBe(
+        '@reviewer\n- Role: Specialized reviewer',
+      );
+    }
+  });
+
+  test('rejects empty prompt fields', () => {
+    const result = AgentOverrideConfigSchema.safeParse({
+      model: 'openai/gpt-5.4',
+      prompt: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects empty orchestratorPrompt fields', () => {
+    const result = AgentOverrideConfigSchema.safeParse({
+      model: 'openai/gpt-5.4',
+      orchestratorPrompt: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects description field on overrides', () => {
+    const result = AgentOverrideConfigSchema.safeParse({
+      model: 'openai/gpt-5.4',
+      description: 'not supported for custom agents',
+    } as Record<string, unknown>);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('PluginConfigSchema custom-agent-only prompt fields', () => {
+  test('rejects prompt on built-in top-level agent overrides', () => {
+    const result = PluginConfigSchema.safeParse({
+      agents: {
+        oracle: {
+          model: 'openai/gpt-5.4',
+          prompt: 'ignored built-in prompt override',
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects orchestratorPrompt on built-in top-level agent overrides', () => {
+    const result = PluginConfigSchema.safeParse({
+      agents: {
+        explorer: {
+          model: 'openai/gpt-5.4-mini',
+          orchestratorPrompt: '@explorer\n- Role: should be invalid here',
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects custom-only prompt fields on built-in preset agents', () => {
+    const result = PluginConfigSchema.safeParse({
+      presets: {
+        openai: {
+          oracle: {
+            model: 'openai/gpt-5.4',
+            prompt: 'ignored preset built-in prompt override',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('allows prompt fields on custom agents', () => {
+    const result = PluginConfigSchema.safeParse({
+      agents: {
+        janitor: {
+          model: 'openai/gpt-5.4-mini',
+          prompt: 'You are Janitor.',
+          orchestratorPrompt: '@janitor\n- Role: Cleanup specialist',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('disabled_agents', () => {
@@ -584,36 +659,34 @@ describe('disabled_agents', () => {
 
   test('protected agents cannot be disabled', () => {
     const config: PluginConfig = {
-      disabled_agents: ['orchestrator', 'councillor', 'council-master'],
+      disabled_agents: ['orchestrator', 'councillor'],
     };
     const agents = createAgents(config);
     const names = agents.map((a) => a.name);
     expect(names).toContain('orchestrator');
     expect(names).toContain('councillor');
-    expect(names).toContain('council-master');
   });
 
-  test('disabling council disables all council agents', () => {
+  test('disabling council disables council agent', () => {
     const config: PluginConfig = {
       disabled_agents: ['council'],
     };
     const agents = createAgents(config);
     const names = agents.map((a) => a.name);
     expect(names).not.toContain('council');
-    // councillor and council-master are protected, they stay
+    // councillor is protected, it stays
     expect(names).toContain('councillor');
-    expect(names).toContain('council-master');
   });
 
   test('agent count decreases when agents are disabled', () => {
     const agents = createAgents();
-    expect(agents.length).toBe(9); // 1 + 8 (observer disabled by default)
+    expect(agents.length).toBe(8); // 1 + 7 (observer disabled by default)
 
     const disabledConfig: PluginConfig = {
       disabled_agents: ['observer', 'designer'],
     };
     const disabledAgents = createAgents(disabledConfig);
-    expect(disabledAgents.length).toBe(8);
+    expect(disabledAgents.length).toBe(7);
   });
 
   test('getDisabledAgents respects protection rules', () => {
@@ -637,12 +710,26 @@ describe('disabled_agents', () => {
     expect(enabled).toContain('explorer');
   });
 
+  test('getEnabledAgentNames includes enabled custom agents', () => {
+    const config: PluginConfig = {
+      disabled_agents: ['janitor'],
+      agents: {
+        janitor: { model: 'openai/gpt-5.4-mini' },
+        reviewer: { model: 'openai/gpt-5.4-mini' },
+      },
+    };
+
+    const enabled = getEnabledAgentNames(config);
+    expect(enabled).toContain('reviewer');
+    expect(enabled).not.toContain('janitor');
+  });
+
   test('empty disabled_agents creates all agents including observer', () => {
     const config: PluginConfig = {
       disabled_agents: [],
     };
     const agents = createAgents(config);
-    expect(agents.length).toBe(10);
+    expect(agents.length).toBe(9);
     expect(agents.map((a) => a.name)).toContain('observer');
   });
 });

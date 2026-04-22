@@ -218,6 +218,7 @@
                   "type": "string"
                 },
                 {
+                  "minItems": 1,
                   "type": "array",
                   "items": {
                     "anyOf": [
@@ -263,6 +264,14 @@
                 "type": "string"
               }
             },
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "orchestratorPrompt": {
+              "type": "string",
+              "minLength": 1
+            },
             "options": {
               "type": "object",
               "propertyNames": {
@@ -274,7 +283,8 @@
               "type": "string",
               "minLength": 1
             }
-          }
+          },
+          "additionalProperties": false
         }
       }
     },
@@ -292,6 +302,7 @@
                 "type": "string"
               },
               {
+                "minItems": 1,
                 "type": "array",
                 "items": {
                   "anyOf": [
@@ -337,6 +348,14 @@
               "type": "string"
             }
           },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "orchestratorPrompt": {
+            "type": "string",
+            "minLength": 1
+          },
           "options": {
             "type": "object",
             "propertyNames": {
@@ -348,11 +367,12 @@
             "type": "string",
             "minLength": 1
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "disabled_agents": {
-      "description": "Agent names to disable completely. Disabled agents are not instantiated and cannot be delegated to. Orchestrator and council internal agents (councillor, council-master) cannot be disabled. By default, 'observer' is disabled. Remove it from this list and configure a vision-capable model to enable.",
+      "description": "Agent names to disable completely. Disabled agents are not instantiated and cannot be delegated to. Orchestrator and council internal agents (councillor) cannot be disabled. By default, 'observer' is disabled. Remove it from this list and configure a vision-capable model to enable.",
       "type": "array",
       "items": {
         "type": "string"
@@ -435,17 +455,6 @@
         }
       }
     },
-    "background": {
-      "type": "object",
-      "properties": {
-        "maxConcurrentStarts": {
-          "default": 10,
-          "type": "number",
-          "minimum": 1,
-          "maximum": 50
-        }
-      }
-    },
     "interview": {
       "type": "object",
       "properties": {
@@ -462,6 +471,7 @@
         },
         "autoOpenBrowser": {
           "default": true,
+          "description": "Automatically open the interview UI in your default browser during interactive runs. Disabled automatically in tests and CI.",
           "type": "boolean"
         },
         "port": {
@@ -589,26 +599,6 @@
     "council": {
       "type": "object",
       "properties": {
-        "master": {
-          "type": "object",
-          "properties": {
-            "model": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^\\s]+$",
-              "description": "Model ID for the council master (e.g. \"anthropic/claude-opus-4-6\")"
-            },
-            "variant": {
-              "type": "string"
-            },
-            "prompt": {
-              "description": "Optional role/guidance injected into the master synthesis prompt",
-              "type": "string"
-            }
-          },
-          "required": [
-            "model"
-          ]
-        },
         "presets": {
           "type": "object",
           "propertyNames": {
@@ -628,12 +618,7 @@
             }
           }
         },
-        "master_timeout": {
-          "default": 300000,
-          "type": "number",
-          "minimum": 0
-        },
-        "councillors_timeout": {
+        "timeout": {
           "default": 180000,
           "type": "number",
           "minimum": 0
@@ -641,14 +626,6 @@
         "default_preset": {
           "default": "default",
           "type": "string"
-        },
-        "master_fallback": {
-          "description": "Fallback models for the council master. Tried in order if the primary model fails. Example: [\"anthropic/claude-sonnet-4-6\", \"openai/gpt-5.4\"]",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[^/\\s]+\\/[^\\s]+$"
-          }
         },
         "councillor_execution_mode": {
           "default": "parallel",
@@ -661,14 +638,22 @@
         },
         "councillor_retries": {
           "default": 3,
-          "description": "Number of retry attempts for councillors and master that return empty responses (e.g. due to provider rate limiting). Default: 3 retries.",
+          "description": "Number of retry attempts for councillors that return empty responses (e.g. due to provider rate limiting). Default: 3 retries.",
           "type": "integer",
           "minimum": 0,
           "maximum": 5
+        },
+        "master": {
+          "description": "DEPRECATED — ignored. Council agent synthesizes directly."
+        },
+        "master_timeout": {
+          "description": "DEPRECATED — ignored. Use \"timeout\" instead."
+        },
+        "master_fallback": {
+          "description": "DEPRECATED — ignored. No separate master session."
         }
       },
       "required": [
-        "master",
         "presets"
       ]
     }

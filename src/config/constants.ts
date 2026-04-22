@@ -13,7 +13,6 @@ export const SUBAGENT_NAMES = [
   'observer',
   'council',
   'councillor',
-  'council-master',
 ] as const;
 
 export const ORCHESTRATOR_NAME = 'orchestrator' as const;
@@ -29,8 +28,8 @@ export type AgentName = (typeof ALL_AGENT_NAMES)[number];
 // designer: can spawn explorer (for research during design)
 // explorer/librarian/oracle: cannot spawn any subagents (leaf nodes)
 // Unknown agent types not listed here default to explorer-only access
-// Which agents each agent type can spawn via background_task tool.
-// councillor and council-master are internal — only CouncilManager spawns them.
+// Which agents each agent type can spawn via delegation.
+// councillor is internal — only CouncilManager spawns it.
 export const ORCHESTRATABLE_AGENTS = [
   'explorer',
   'librarian',
@@ -42,11 +41,7 @@ export const ORCHESTRATABLE_AGENTS = [
 ] as const;
 
 /** Agents that cannot be disabled even if listed in disabled_agents config. */
-export const PROTECTED_AGENTS = new Set([
-  'orchestrator',
-  'councillor',
-  'council-master',
-]);
+export const PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 
 /**
  * Get the list of orchestratable agents, excluding any disabled agents.
@@ -68,7 +63,6 @@ export const SUBAGENT_DELEGATION_RULES: Record<AgentName, readonly string[]> = {
   observer: [],
   council: [],
   councillor: [],
-  'council-master': [],
 };
 
 // Default models for each agent
@@ -83,7 +77,6 @@ export const DEFAULT_MODELS: Record<AgentName, string | undefined> = {
   observer: 'openai/gpt-5.4-mini',
   council: 'openai/gpt-5.4-mini',
   councillor: 'openai/gpt-5.4-mini',
-  'council-master': 'openai/gpt-5.4-mini',
 };
 
 // Polling configuration
@@ -100,9 +93,9 @@ export const FALLBACK_FAILOVER_TIMEOUT_MS = 15_000;
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 3;
 
 // Workflow reminders
-export const PHASE_REMINDER_TEXT = `Recall Workflow Rules:
-Understand → build the best path (delegated based on Agent rules, split and parallelized as much as possible) → execute → verify.
-If delegating, launch the specialist in the same turn you mention it.`;
+export const PHASE_REMINDER_TEXT = `!IMPORTANT! Recall the workflow rules:
+Understand → choose the best parallelized path based on your agents delegation rules → don't prefer solo → execute → verify.
+If delegating, launch the specialist in the same turn you mention it !END!`;
 
 // Tmux pane spawn delay (ms) — gives TmuxSessionManager time to create pane
 export const TMUX_SPAWN_DELAY_MS = 500;

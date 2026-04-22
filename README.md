@@ -23,11 +23,19 @@ To explore the agents themselves, see **[Meet the Pantheon](#meet-the-pantheon)*
 
 ### Quick Start
 
+Copy and paste this prompt to your LLM agent (Claude Code, AmpCode, Cursor, etc.):
+
+
+```
+Install and configure oh-my-opencode-slim: https://raw.githubusercontent.com/alvinunreal/oh-my-opencode-slim/refs/heads/master/README.md
+```
+
+
+### Manual Installation
+
 ```bash
 bunx oh-my-opencode-slim@latest install
 ```
-
-For bug reports and feature requests, use GitHub Issues. For setup questions, troubleshooting, or general support, use the Telegram channel linked above.
 
 ### Getting Started
 
@@ -63,7 +71,7 @@ The default generated configuration looks like this:
       "orchestrator": { "model": "openai/gpt-5.4", "variant": "high", "skills": ["*"], "mcps": ["*", "!context7"] },
       "oracle": { "model": "openai/gpt-5.4", "variant": "high", "skills": ["simplify"], "mcps": [] },
       "librarian": { "model": "openai/gpt-5.4-mini", "variant": "low", "skills": [], "mcps": ["websearch", "context7", "grep_app"] },
-      "explorer": { "model": "openai/gpt-5.4-mini", "variant": "low", "skills": ["cartography"], "mcps": [] },
+      "explorer": { "model": "openai/gpt-5.4-mini", "variant": "low", "skills": [], "mcps": [] },
       "designer": { "model": "openai/gpt-5.4-mini", "variant": "medium", "skills": ["agent-browser"], "mcps": [] },
       "fixer": { "model": "openai/gpt-5.4-mini", "variant": "low", "skills": [], "mcps": [] }
     }
@@ -73,7 +81,11 @@ The default generated configuration looks like this:
 
 ### For Alternative Providers
 
-To use Kimi, GitHub Copilot, ZAI Coding Plan, or a mixed-provider setup, see **[Provider Configurations](docs/provider-configurations.md)** for step-by-step config examples. If you want a ready-made starting point, check the **[Author's Preset](docs/authors-preset.md)** and **[$30 Preset](docs/thirty-dollars-preset.md)** - the `$30` preset is the best cheap setup.
+To use Kimi, GitHub Copilot, ZAI Coding Plan, or a mixed-provider setup, use **[Configuration](docs/configuration.md)** for the full reference. If you want a ready-made starting point, check the **[Author's Preset](docs/authors-preset.md)** and **[$30 Preset](docs/thirty-dollars-preset.md)** - the `$30` preset is the best cheap setup.
+
+The configuration guide also covers custom subagents via `agents.<name>`, where
+you can define both a normal `prompt` and an `orchestratorPrompt` block for
+delegation.
 
 You can also mix and match any models per agent. For model suggestions, see the **Recommended Models** listed under each agent below.
 
@@ -93,7 +105,7 @@ ping all agents
 
 <div align="center">
   <img src="img/ping.png" alt="Ping all agents" width="600">
-  <p><i>Confirmation that all six agents are online and ready.</i></p>
+  <p><i>Confirmation that all configured agents are online and ready.</i></p>
 </div>
 
 If any agent fails to respond, check your provider authentication and config file.
@@ -227,7 +239,7 @@ If any agent fails to respond, check your provider authentication and config fil
 
 ---
 
-### Council: The Chorus of Minds
+### 04. Council: The Chorus of Minds
 
 > [!NOTE]
 > **Why doesn't Orchestrator auto-call Council more often?** This is intentional. Council runs multiple models at once, so automatic delegation is kept strict because it is usually the highest-cost path in the system. In practice, Council is meant to be used manually when you want it, for example: <code>@council compare these two architectures</code>.
@@ -259,7 +271,7 @@ If any agent fails to respond, check your provider authentication and config fil
   </tr>
   <tr>
     <td colspan="2">
-      <b>Default Setup:</b> <code>Config-driven</code> — council master + councillors are chosen from your configured preset
+      <b>Default Setup:</b> <code>Config-driven</code> — councillors are chosen from your configured preset and the council agent synthesizes their responses
     </td>
   </tr>
   <tr>
@@ -276,7 +288,7 @@ If any agent fails to respond, check your provider authentication and config fil
 
 ---
 
-### 04. Librarian: The Weaver of Knowledge
+### 05. Librarian: The Weaver of Knowledge
 
 <table>
   <tr>
@@ -317,7 +329,7 @@ If any agent fails to respond, check your provider authentication and config fil
 
 ---
 
-### 05. Designer: The Guardian of Aesthetics
+### 06. Designer: The Guardian of Aesthetics
 
 <table>
   <tr>
@@ -358,7 +370,7 @@ If any agent fails to respond, check your provider authentication and config fil
 
 ---
 
-### 06. Fixer: The Last Builder
+### 07. Fixer: The Last Builder
 
 <table>
   <tr>
@@ -397,18 +409,22 @@ If any agent fails to respond, check your provider authentication and config fil
   </tr>
 </table>
 
-### 07. Observer: The Silent Witness
+---
+
+## Optional Agents
+
+### Observer: The Silent Witness
 
 > [!NOTE]
 > **Why a separate agent?** If your Orchestrator model is not multimodal, enable Observer to handle images, screenshots, PDFs, and other visual files. Observer is disabled by default and gives the Orchestrator a dedicated multimodal reader without forcing you to change your main reasoning model. Set `disabled_agents: []` and an `observer` model in your configuration.
 
 <table>
   <tr>
-    <td width="240" valign="top">
-      <b>Observer</b><br>
-      <i>Visual & binary analysis</i>
+    <td width="30%" align="center" valign="top">
+      <img src="img/observer.jpg" width="240" style="border-radius: 10px;">
+      <br><sub><i>The eye that reads what others cannot.</i></sub>
     </td>
-    <td>
+    <td width="70%" valign="top">
 
 **Read-only visual analysis** — interprets images, screenshots, PDFs, and diagrams. Returns structured observations to the orchestrator without loading raw file bytes into the main context window.
 
@@ -446,7 +462,6 @@ Use this section as a map: start with installation, then jump to features, confi
 | Doc | What it covers |
 |-----|----------------|
 | **[Installation Guide](docs/installation.md)** | Install the plugin, use CLI flags, reset config, and troubleshoot setup |
-| **[Provider Configurations](docs/provider-configurations.md)** | Configure OpenAI, Kimi, GitHub Copilot, ZAI, Fireworks AI, or mixed-provider presets |
 
 <a id="features-and-workflows"></a>
 
@@ -458,7 +473,7 @@ Use this section as a map: start with installation, then jump to features, confi
 | **[Interview](docs/interview.md)** | Turn rough ideas into a structured markdown spec through a browser-based Q&A flow |
 | **[Multiplexer Integration](docs/multiplexer-integration.md)** | Watch agents work live in Tmux or Zellij panes |
 | **[Todo Continuation](docs/todo-continuation.md)** | Auto-continue orchestrator sessions with cooldowns and safety checks |
-| **[Cartography](docs/cartography.md)** | Generate hierarchical codemaps to understand large codebases faster |
+| **[Codemap](docs/codemap.md)** | Generate hierarchical codemaps to understand large codebases faster |
 
 ### ⚙️ Config & Reference
 
@@ -466,9 +481,9 @@ Use this section as a map: start with installation, then jump to features, confi
 |-----|----------------|
 | **[Configuration](docs/configuration.md)** | Config file locations, JSONC support, prompt overrides, and full option reference |
 | **[Maintainer Guide](docs/maintainers.md)** | Issue triage rules, label meanings, support routing, and repo maintenance workflow |
-| **[Skills](docs/skills.md)** | Built-in and recommended skills such as `simplify`, `agent-browser`, and `cartography` |
+| **[Skills](docs/skills.md)** | Built-in and recommended skills such as `simplify`, `agent-browser`, and `codemap` |
 | **[MCPs](docs/mcps.md)** | `websearch`, `context7`, `grep_app`, and how MCP permissions work per agent |
-| **[Tools](docs/tools.md)** | Built-in tool capabilities like background tasks, `webfetch`, LSP tools, code search, and formatters |
+| **[Tools](docs/tools.md)** | Built-in tool capabilities like `webfetch`, LSP tools, code search, and formatters |
 
 ### 💡 Example Presets
 
