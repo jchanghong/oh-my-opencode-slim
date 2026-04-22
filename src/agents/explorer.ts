@@ -25,7 +25,7 @@ Concise answer to the question
 </results>
 
 **Constraints**:
-- Use parallel tool calls by default whenever dependencies allow
+- By default, bundle all independent tool calls into the same assistant response whenever dependencies allow, instead of emitting them sequentially.
 - READ-ONLY: Search and report, don't modify
 - Be exhaustive but concise
 - Include line numbers when relevant

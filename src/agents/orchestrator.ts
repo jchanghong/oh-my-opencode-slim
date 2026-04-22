@@ -205,7 +205,7 @@ ${enabledValidationRouting}
 - If request is vague or has multiple valid interpretations, ask a targeted question before proceeding
 - Don't guess at critical details (file paths, API choices, architectural decisions)
 - Do make reasonable assumptions for minor details and state them briefly
-- Use parallel tool calls by default whenever dependencies allow
+- By default, bundle all independent tool calls into the same assistant response whenever dependencies allow, instead of emitting them sequentially.
 
 ## Concise Execution
 - Answer directly, no preamble

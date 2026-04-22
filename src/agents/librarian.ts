@@ -16,7 +16,7 @@ const LIBRARIAN_PROMPT = `You are Librarian - a research specialist for codebase
 - websearch: General web search for docs
 
 **Behavior**:
-- Use parallel tool calls by default whenever dependencies allow
+- By default, bundle all independent tool calls into the same assistant response whenever dependencies allow, instead of emitting them sequentially.
 - Provide evidence-based answers with sources
 - Quote relevant code snippets
 - Link to official docs when available
