@@ -2,6 +2,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
 import { buildOrchestratorPrompt } from './agents/orchestrator';
 import { loadPluginConfig, type MultiplexerConfig } from './config';
+import { collapseSystemInPlace } from './utils/system-collapse';
 import { parseList } from './config/agent-mcps';
 import { CouncilManager } from './council';
 import {
@@ -28,6 +29,7 @@ import {
   ast_grep_replace,
   ast_grep_search,
   createCouncilTool,
+  createPresetManager,
   createWebfetchTool,
 } from './tools';
 import { resolveRuntimeAgentName, rewriteDisplayNameMentions } from './utils';
@@ -109,6 +111,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let foregroundFallback: ForegroundFallbackManager;
   let todoContinuationHook: ReturnType<typeof createTodoContinuationHook>;
   let interviewManager: ReturnType<typeof createInterviewManager>;
+  let presetManager: ReturnType<typeof createPresetManager>;
   let councilTools: Record<string, unknown>;
   let webfetch: ReturnType<typeof createWebfetchTool>;
 
@@ -249,6 +252,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       autoEnableThreshold: config.todoContinuation?.autoEnableThreshold ?? 4,
     });
     interviewManager = createInterviewManager(ctx, config);
+    presetManager = createPresetManager(ctx, config);
 
     toolCount =
       Object.keys(councilTools).length +
@@ -520,6 +524,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       }
 
       interviewManager.registerCommand(opencodeConfig);
+      presetManager.registerCommand(opencodeConfig);
     },
 
     event: async (input) => {
@@ -625,6 +630,15 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
         output as { parts: Array<{ type: string; text?: string }> },
       );
+
+      await presetManager.handleCommandExecuteBefore(
+        input as {
+          command: string;
+          sessionID: string;
+          arguments: string;
+        },
+        output as { parts: Array<{ type: string; text?: string }> },
+      );
     },
 
     'chat.headers': chatHeadersHook['chat.headers'],
@@ -704,12 +718,11 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       );
 
       // Collapse to single system message for provider compatibility.
-      // Some providers (e.g. Qwen3.5 via DashScope) reject multiple
+      // Some providers (e.g. Qwen via VLLM/DashScope) reject multiple
       // system messages. Sub-hooks above may push additional entries; join
       // them back into one element so OpenCode emits a single system
       // message.
-      const joined = output.system.join('\n\n');
-      output.system = joined ? [joined] : [];
+      collapseSystemInPlace(output.system);
     },
 
     // Inject phase reminder and filter available skills before sending to
