@@ -23,6 +23,10 @@
       "description": "Show the startup activation toast when OpenCode starts. Defaults to true.",
       "type": "boolean"
     },
+    "autoUpdate": {
+      "description": "Disable automatic installation of plugin updates when false. Defaults to true.",
+      "type": "boolean"
+    },
     "manualPlan": {
       "type": "object",
       "properties": {
@@ -483,6 +487,17 @@
         "dashboard": {
           "default": false,
           "type": "boolean"
+        }
+      }
+    },
+    "sessionManager": {
+      "type": "object",
+      "properties": {
+        "maxSessionsPerAgent": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
         }
       }
     },

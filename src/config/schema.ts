@@ -181,6 +181,12 @@ export const InterviewConfigSchema = z.object({
 
 export type InterviewConfig = z.infer<typeof InterviewConfigSchema>;
 
+export const SessionManagerConfigSchema = z.object({
+  maxSessionsPerAgent: z.number().int().min(1).max(10).default(2),
+});
+
+export type SessionManagerConfig = z.infer<typeof SessionManagerConfigSchema>;
+
 // Todo continuation configuration
 export const TodoContinuationConfigSchema = z.object({
   maxContinuations: z
@@ -280,6 +286,12 @@ export const PluginConfigSchema = z
       .describe(
         'Show the startup activation toast when OpenCode starts. Defaults to true.',
       ),
+    autoUpdate: z
+      .boolean()
+      .optional()
+      .describe(
+        'Disable automatic installation of plugin updates when false. Defaults to true.',
+      ),
     manualPlan: ManualPlanSchema.optional(),
     presets: z.record(z.string(), PresetSchema).optional(),
     agents: z.record(z.string(), AgentOverrideConfigSchema).optional(),
@@ -300,6 +312,7 @@ export const PluginConfigSchema = z
     tmux: TmuxConfigSchema.optional(),
     websearch: WebsearchConfigSchema.optional(),
     interview: InterviewConfigSchema.optional(),
+    sessionManager: SessionManagerConfigSchema.optional(),
     todoContinuation: TodoContinuationConfigSchema.optional(),
     fallback: FailoverConfigSchema.optional(),
     council: CouncilConfigSchema.optional(),

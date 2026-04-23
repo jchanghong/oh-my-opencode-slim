@@ -380,6 +380,33 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "DenisBalan",
+      "name": "Denis Balan",
+      "avatar_url": "https://avatars.githubusercontent.com/u/33955091?v=4",
+      "profile": "https://github.com/DenisBalan",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "gustavocaiano",
+      "name": "Gustavo Caiano",
+      "avatar_url": "https://avatars.githubusercontent.com/u/104129313?v=4",
+      "profile": "https://github.com/gustavocaiano",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "ThomasMldr",
+      "name": "Thomas Mulder",
+      "avatar_url": "https://avatars.githubusercontent.com/u/6631765?v=4",
+      "profile": "https://github.com/ThomasMldr",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "commitConvention": "angular"

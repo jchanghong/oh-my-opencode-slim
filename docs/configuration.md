@@ -86,7 +86,9 @@ All config files support **JSONC** (JSON with Comments):
 ### Runtime Preset Switching
 
 Presets can also be switched at runtime without restarting using the `/preset` command. See [Preset Switching](preset-switching.md) for details.
+
 | `presets` | object | — | Named preset configurations |
+|-----------|--------|---|-----------------------------|
 | `presets.<name>.<agent>.model` | string | — | Model ID in `provider/model` format |
 | `presets.<name>.<agent>.temperature` | number | — | Temperature (0–2) |
 | `presets.<name>.<agent>.variant` | string | — | Reasoning effort: `"low"`, `"medium"`, `"high"` |
@@ -99,25 +101,28 @@ Presets can also be switched at runtime without restarting using the `/preset` c
 | `agents.<customAgent>.orchestratorPrompt` | string | — | Exact `@agent` block injected into the orchestrator prompt; must start with `@<agent-name>` |
 | `agents.<agent>.displayName` | string | — | Custom user-facing alias for the agent in the active config |
 | `showStartupToast` | boolean | `true` | Show the startup activation toast (`oh-my-opencode-slim is active`) when OpenCode starts |
+| `autoUpdate` | boolean | `true` | Automatically install plugin updates in the background; set to `false` for notification-only mode |
 | `multiplexer.type` | string | `"none"` | Multiplexer mode: `auto`, `tmux`, `zellij`, or `none` |
 | `multiplexer.layout` | string | `"main-vertical"` | Layout preset: `main-vertical`, `main-horizontal`, `tiled`, `even-horizontal`, `even-vertical` |
 | `multiplexer.main_pane_size` | number | `60` | Main pane size as percentage (20–80) |
 | `tmux.enabled` | boolean | `false` | Legacy alias for `multiplexer.type = "tmux"` |
 | `tmux.layout` | string | `"main-vertical"` | Legacy alias for `multiplexer.layout` |
 | `tmux.main_pane_size` | number | `60` | Legacy alias for `multiplexer.main_pane_size` |
+| `sessionManager.maxSessionsPerAgent` | integer | `2` | Maximum remembered resumable child sessions per specialist type in the current orchestrator session (1–10) |
 | `disabled_mcps` | string[] | `[]` | MCP server IDs to disable globally |
 | `fallback.enabled` | boolean | `false` | Enable model failover on timeout/error |
 | `fallback.timeoutMs` | number | `15000` | Time before aborting and trying next model |
 | `fallback.retryDelayMs` | number | `500` | Delay between retry attempts |
 | `fallback.chains.<agent>` | string[] | — | Ordered fallback model IDs for an agent |
- | `fallback.retry_on_empty` | boolean | `true` | Treat silent empty provider responses (0 tokens) as failures and retry. Set `false` to accept empty responses |
- | `council.presets` | object | — | **Required if using council.** Named councillor presets |
- | `council.presets.<name>.<councillor>.model` | string | — | Councillor model |
- | `council.presets.<name>.<councillor>.variant` | string | — | Councillor variant |
- | `council.presets.<name>.<councillor>.prompt` | string | — | Optional role guidance for the councillor |
- | `council.default_preset` | string | `"default"` | Default preset when none is specified |
- | `council.timeout` | number | `180000` | Councillor timeout (ms) |
- | `council.councillor_retries` | number | `3` | Max retries per councillor on empty provider response (0–5) |
+| `fallback.retry_on_empty` | boolean | `true` | Treat silent empty provider responses (0 tokens) as failures and retry. Set `false` to accept empty responses |
+| `council.presets` | object | — | **Required if using council.** Named councillor presets |
+| `council.presets.<name>.<councillor>.model` | string | — | Councillor model |
+| `council.presets.<name>.<councillor>.variant` | string | — | Councillor variant |
+| `council.presets.<name>.<councillor>.prompt` | string | — | Optional role guidance for the councillor |
+| `council.default_preset` | string | `"default"` | Default preset when none is specified |
+| `council.timeout` | number | `180000` | Per-councillor timeout (ms) |
+| `council.councillor_execution_mode` | string | `"parallel"` | Run councillors in `parallel` or `serial`; use `serial` for single-model setups |
+| `council.councillor_retries` | number | `3` | Max retries per councillor on empty provider response (0–5) |
 | `todoContinuation.maxContinuations` | integer | `5` | Max consecutive auto-continuations before stopping (1–50) |
 | `todoContinuation.cooldownMs` | integer | `3000` | Delay in ms before auto-continuing — gives user time to abort (0–30000) |
 | `todoContinuation.autoEnable` | boolean | `false` | Automatically enable auto-continue when session has enough todos |
@@ -127,6 +132,14 @@ Presets can also be switched at runtime without restarting using the `/preset` c
 | `interview.autoOpenBrowser` | boolean | `true` | Automatically open the interview UI in your default browser during interactive runs; suppressed in tests and CI |
 | `interview.port` | integer | `0` | Interview server port (0–65535). `0` = OS-assigned random port (per-session mode). Any value > 0 enables [dashboard mode](interview.md#dashboard-mode) |
 | `interview.dashboard` | boolean | `false` | Enable [dashboard mode](interview.md#dashboard-mode) on the default port (43211). Setting `port` > 0 also enables dashboard mode. If both are set, `port` takes precedence |
+
+### Council configuration note
+
+- The **Council agent model** is configured like any other agent, for example in
+  `presets.<name>.council.model`.
+- The **councillor models** are configured separately under
+  `council.presets.<name>.<councillor>.model`.
+- Deprecated `council.master*` fields should not be used in new configs.
 
 ### Startup Toast
 
@@ -138,6 +151,46 @@ appears when the plugin activates.
   "showStartupToast": false
 }
 ```
+
+### Manual Update Mode
+
+Set `autoUpdate` to `false` if you want update notifications without automatic
+`bun install` runs.
+
+```jsonc
+{
+  "autoUpdate": false
+}
+```
+
+With `autoUpdate` set to `false`, this becomes notification-only mode: you'll
+see that a new version is available, but the plugin won't install it
+automatically.
+
+> Pinned plugin entries in `opencode.json` (for example
+> `"oh-my-opencode-slim@1.0.1"`) are the true version lock. Those stay pinned
+> regardless of `autoUpdate`.
+
+### Session Manager
+
+The session manager is enabled by default. It keeps a small in-memory working
+set of resumable child sessions for orchestrator-managed delegations, scoped to
+the current parent orchestrator session.
+
+```jsonc
+{
+  "sessionManager": {
+    "maxSessionsPerAgent": 2
+  }
+}
+```
+
+Notes:
+
+- Only orchestrator-managed `task` delegations participate
+- Manual `@agent` calls do not reuse this registry
+- Sessions are kept in memory only and disappear on restart
+- When a remembered session is missing, the next delegation falls back to a fresh child session
 
 ### Agent Display Names
 
