@@ -40,6 +40,12 @@ export const CUSTOM_SKILLS: CustomSkill[] = [
     allowedAgents: ['orchestrator'],
     sourcePath: 'src/skills/codemap',
   },
+  {
+    name: 'cppcodemap',
+    description: 'C/C++/Python/CMake repository codemap generation',
+    allowedAgents: ['orchestrator'],
+    sourcePath: 'src/skills/cppcodemap',
+  },
 ];
 
 /**

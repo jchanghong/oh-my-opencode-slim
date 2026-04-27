@@ -240,6 +240,7 @@ describe("skill permissions", () => {
     expect(skillPerm?.["*"]).toBe("allow");
     // CUSTOM_SKILLS loop must also add a named codemap entry for orchestrator
     expect(skillPerm?.codemap).toBe("allow");
+    expect(skillPerm?.cppcodemap).toBe("allow");
   });
 
   test("fixer does not get codemap skill allowed by default", () => {
@@ -249,6 +250,7 @@ describe("skill permissions", () => {
     const skillPerm = (fixer?.config.permission as Record<string, unknown>)
       ?.skill as Record<string, string>;
     expect(skillPerm?.codemap).not.toBe("allow");
+    expect(skillPerm?.cppcodemap).not.toBe("allow");
   });
 
   test("oracle gets requesting-code-review skill allowed by default", () => {
