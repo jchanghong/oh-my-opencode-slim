@@ -15,6 +15,7 @@ mock.restore();
 const {
   computeFileHash,
   computeFolderHash,
+  createEmptyCodemap,
   loadState,
   PatternMatcher,
   selectFiles,
@@ -125,5 +126,60 @@ describe('loadState', () => {
     expect(
       JSON.parse(readFileSync(path.join(slimDir, 'codemap.json'), 'utf8')),
     ).toEqual(legacyState);
+  });
+});
+
+describe('createEmptyCodemap', () => {
+  test('root template contains Repository Atlas sections', () => {
+    const dir = createTempDir();
+    createEmptyCodemap(dir, 'test-project', true);
+    const content = readFileSync(path.join(dir, 'codemap.md'), 'utf8');
+
+    expect(content).toContain('# Repository Atlas: test-project');
+    expect(content).toContain('## 项目定位');
+    expect(content).toContain('## 功能能力清单');
+    expect(content).toContain('## 系统入口');
+    expect(content).toContain('## 模块地图');
+    expect(content).toContain('## 推荐阅读顺序');
+  });
+
+  test('module template contains Module Codemap sections', () => {
+    const dir = createTempDir();
+    createEmptyCodemap(dir, 'subdir', false);
+    const content = readFileSync(path.join(dir, 'codemap.md'), 'utf8');
+
+    expect(content).toContain('# Module Codemap: subdir/');
+    expect(content).toContain('## 模块职责');
+    expect(content).toContain('## 解决的问题');
+    expect(content).toContain('## 关键文件与实体');
+    expect(content).toContain('## 对外入口');
+    expect(content).toContain('## 修改指南');
+  });
+
+  test('both templates contain required diagram headings and Mermaid markers', () => {
+    const rootDir = createTempDir();
+    createEmptyCodemap(rootDir, 'root-proj', true);
+    const rootContent = readFileSync(path.join(rootDir, 'codemap.md'), 'utf8');
+
+    const modDir = createTempDir();
+    createEmptyCodemap(modDir, 'module-a', false);
+    const modContent = readFileSync(path.join(modDir, 'codemap.md'), 'utf8');
+
+    for (const content of [rootContent, modContent]) {
+      expect(content).toContain('## 当前目录下各个子目录或文件的模块关系图');
+      expect(content).toContain('## 正常业务流程图');
+      expect(content).toContain('```mermaid');
+    }
+  });
+
+  test('existing codemap.md is not overwritten', () => {
+    const dir = createTempDir();
+    const existingContent = 'existing codemap content';
+    writeFileSync(path.join(dir, 'codemap.md'), existingContent);
+
+    createEmptyCodemap(dir, 'should-not-overwrite', true);
+
+    const content = readFileSync(path.join(dir, 'codemap.md'), 'utf8');
+    expect(content).toBe(existingContent);
   });
 });

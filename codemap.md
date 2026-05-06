@@ -9,7 +9,8 @@
 - expose additional tools and MCP integrations,
 - manage delegated/resumable session orchestration and terminal multiplexer visualization,
 - inject workflow-enforcement hooks plus runtime command handlers,
-- ship install-time skills and a bootstrap CLI.
+- ship install-time skills and a bootstrap CLI,
+- define new-contributor Repository Atlas and Module Codemap templates in `createEmptyCodemap()`.
 
 This codemap intentionally covers the plugin repository itself and excludes the nested `opencode/` upstream checkout.
 
@@ -94,6 +95,12 @@ This codemap intentionally covers the plugin repository itself and excludes the 
 - `src/hooks/task-session-manager/` depends on `src/utils/session-manager.ts` and `src/utils/task.ts` to support child-session reuse.
 - `src/hooks/filter-available-skills/` and agent permission logic rely on shared skill names from the CLI/config layer.
 - `src/interview/` hooks into plugin command/event surfaces exposed by `src/index.ts`.
+
+## Design / Patterns
+
+- **Template layer**: root Repository Atlas and per-folder Module Codemap templates in `createEmptyCodemap()` (scripts/codemap.mjs). Fixers fill these templates after reading enough code, docs, configuration, and scripts to explain architecture, flows, dependencies, state, errors, and common change paths.
+- **Agent delegation**: Orchestrator routes work to specialist agents (explorer, fixer, librarian, oracle) based on task type. Each agent has a specific role, model assignment, and permission set.
+- **Plugin composition**: `src/index.ts` acts as the composition root, wiring agents, tools, MCPs, hooks, and session managers together at startup.
 
 ## Root Assets
 
