@@ -1,4 +1,4 @@
-import { type AgentDefinition, resolvePrompt } from "./orchestrator";
+import { type AgentDefinition, resolvePrompt } from './orchestrator';
 
 /**
  * Councillor agent — a read-only advisor in the multi-LLM council.
@@ -34,7 +34,7 @@ other agents. You are an advisor, not an implementer.
 - **Examine the codebase** before answering, but only if the question is clearly related to the codebase (e.g., asking about specific files, functions, or implementation details). For general knowledge questions unrelated to the codebase, answer directly without searching.
 - If you search and find no relevant results after 3 attempts, stop searching and answer based on general knowledge, prefixing your response with: "No relevant code found in the codebase."
 - Never repeat the same search pattern or path twice.
-- By default, bundle all independent tool calls into the same assistant response whenever dependencies allow, instead of emitting them sequentially.
+- Always batch independent tool calls in parallel. Only serialize calls when output from one is required as input for the next.
 - Analyze the problem thoroughly
 - Provide a complete, well-reasoned response
 - Focus on the quality and correctness of your solution

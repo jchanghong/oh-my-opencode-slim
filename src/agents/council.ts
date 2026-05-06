@@ -32,7 +32,6 @@ key insight and unique contribution by name
 6. Format output per the Required Output Format below
 
 **Behavior**:
-- By default, bundle all independent tool calls into the same assistant response whenever dependencies allow, instead of emitting them sequentially.
 - Delegate requests directly to council_session
 - Don't pre-analyze or filter the prompt before calling council_session
 - Credit specific insights from individual councillors using their names
