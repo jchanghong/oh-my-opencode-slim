@@ -1,9 +1,19 @@
 {
   "name": "oh-my-opencode-slim",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "description": "Lightweight agent orchestration plugin for OpenCode - a slimmed-down fork of oh-my-opencode",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./tui": {
+      "import": "./dist/tui.js",
+      "types": "./dist/tui.d.ts"
+    }
+  },
   "bin": {
     "oh-my-opencode-slim": "./dist/cli/index.js"
   },
@@ -36,9 +46,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "build:plugin": "bun build src/index.ts --outdir dist --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk --external jsdom --external zod",
+    "build:plugin": "bun build src/index.ts src/tui.ts --outdir dist --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk --external @opentui/core --external @opentui/solid --external jsdom --external zod",
     "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target node --format esm --external @ast-grep/napi --external @opencode-ai/plugin --external @opencode-ai/sdk --external jsdom --external zod",
-    "build": "bun run build:plugin && bun run build:cli && tsc --emitDeclarationOnly && bun run generate-schema",
+    "copy:divoom-assets": "bun run scripts/copy-divoom-assets.ts",
+    "build": "bun run build:plugin && bun run build:cli && bun run copy:divoom-assets && tsc --emitDeclarationOnly && bun run generate-schema",
     "prepare": "bun run build",
     "contributors:add": "all-contributors add",
     "contributors:check": "all-contributors check",
@@ -67,6 +78,9 @@
     "jsdom": "^26.1.0",
     "lru-cache": "^11.3.3",
     "turndown": "^7.2.4"
+  },
+  "optionalDependencies": {
+    "@opentui/solid": "^0.1.97"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.11",

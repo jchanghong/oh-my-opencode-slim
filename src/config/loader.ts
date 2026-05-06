@@ -4,6 +4,41 @@ import { stripJsonComments } from '../cli/config-io';
 import { getConfigSearchDirs } from '../cli/paths';
 import { type PluginConfig, PluginConfigSchema } from './schema';
 
+/**
+ * Warning kinds produced during config loading.
+ */
+export type ConfigLoadWarningKind =
+  | 'invalid-json'
+  | 'invalid-schema'
+  | 'read-error'
+  | 'missing-preset';
+
+/**
+ * A warning emitted while loading plugin configuration.
+ */
+export interface ConfigLoadWarning {
+  path: string;
+  kind: ConfigLoadWarningKind;
+  message: string;
+  formatted?: unknown;
+}
+
+/**
+ * Options for loadPluginConfig.
+ */
+export interface LoadPluginConfigOptions {
+  /**
+   * Called with a warning whenever config loading produces a non-fatal issue.
+   * The loader still falls back to defaults and continues normally.
+   */
+  onWarning?: (warning: ConfigLoadWarning) => void;
+
+  /**
+   * Suppress console warnings while still invoking onWarning.
+   */
+  silent?: boolean;
+}
+
 const PROMPTS_DIR_NAME = 'oh-my-opencode-slim';
 
 /**
@@ -13,18 +48,48 @@ const PROMPTS_DIR_NAME = 'oh-my-opencode-slim';
  * Logs warnings for validation errors and unexpected read errors.
  *
  * @param configPath - Absolute path to the config file
+ * @param onWarning - Optional callback for warnings
  * @returns Validated config object, or null if loading failed
  */
-function loadConfigFromPath(configPath: string): PluginConfig | null {
+function loadConfigFromPath(
+  configPath: string,
+  options?: LoadPluginConfigOptions,
+): PluginConfig | null {
   try {
     const content = fs.readFileSync(configPath, 'utf-8');
     // Use stripJsonComments to support JSONC format (comments and trailing commas)
-    const rawConfig = JSON.parse(stripJsonComments(content));
+    let rawConfig: unknown;
+    try {
+      rawConfig = JSON.parse(stripJsonComments(content));
+    } catch (error) {
+      // Empty file or JSON parse error is treated as invalid-json
+      const message = error instanceof Error ? error.message : String(error);
+      options?.onWarning?.({
+        path: configPath,
+        kind: 'invalid-json',
+        message,
+      });
+      if (!options?.silent) {
+        console.warn(
+          `[oh-my-opencode-slim] Invalid JSON in ${configPath}:`,
+          message,
+        );
+      }
+      return null;
+    }
     const result = PluginConfigSchema.safeParse(rawConfig);
 
     if (!result.success) {
-      console.warn(`[oh-my-opencode-slim] Invalid config at ${configPath}:`);
-      console.warn(result.error.format());
+      options?.onWarning?.({
+        path: configPath,
+        kind: 'invalid-schema',
+        message: 'Config does not match schema',
+        formatted: result.error.format(),
+      });
+      if (!options?.silent) {
+        console.warn(`[oh-my-opencode-slim] Invalid config at ${configPath}:`);
+        console.warn(result.error.format());
+      }
       return null;
     }
 
@@ -36,10 +101,17 @@ function loadConfigFromPath(configPath: string): PluginConfig | null {
       'code' in error &&
       (error as NodeJS.ErrnoException).code !== 'ENOENT'
     ) {
-      console.warn(
-        `[oh-my-opencode-slim] Error reading config from ${configPath}:`,
-        error.message,
-      );
+      options?.onWarning?.({
+        path: configPath,
+        kind: 'read-error',
+        message: error.message,
+      });
+      if (!options?.silent) {
+        console.warn(
+          `[oh-my-opencode-slim] Error reading config from ${configPath}:`,
+          error.message,
+        );
+      }
     }
     return null;
   }
@@ -81,6 +153,56 @@ function findConfigPathInDirs(
 }
 
 /**
+ * Find plugin config paths (user and project) for a given directory.
+ * User config uses getConfigSearchDirs() for lookup.
+ * Project config uses <directory>/.opencode/oh-my-opencode-slim.
+ *
+ * @param directory - Project directory to search for .opencode config
+ * @returns Object with userConfigPath and projectConfigPath (null if not found)
+ */
+export function findPluginConfigPaths(directory: string): {
+  userConfigPath: string | null;
+  projectConfigPath: string | null;
+} {
+  const userConfigPath = findConfigPathInDirs(
+    getConfigSearchDirs(),
+    'oh-my-opencode-slim',
+  );
+
+  const projectConfigBasePath = path.join(
+    directory,
+    '.opencode',
+    'oh-my-opencode-slim',
+  );
+
+  const projectConfigPath = findConfigPath(projectConfigBasePath);
+
+  return { userConfigPath, projectConfigPath };
+}
+
+/**
+ * Merge two plugin configs using the loader's merge rules.
+ * Project/override takes precedence over base.
+ */
+export function mergePluginConfigs(
+  base: PluginConfig,
+  override: PluginConfig,
+): PluginConfig {
+  return {
+    ...base,
+    ...override,
+    agents: deepMerge(base.agents, override.agents),
+    tmux: deepMerge(base.tmux, override.tmux),
+    multiplexer: deepMerge(base.multiplexer, override.multiplexer),
+    interview: deepMerge(base.interview, override.interview),
+    sessionManager: deepMerge(base.sessionManager, override.sessionManager),
+    divoom: deepMerge(base.divoom, override.divoom),
+    fallback: deepMerge(base.fallback, override.fallback),
+    council: deepMerge(base.council, override.council),
+  };
+}
+
+/**
  * Recursively merge two objects, with override values taking precedence.
  * For nested objects, merges recursively. For arrays and primitives, override replaces base.
  *
@@ -88,7 +210,7 @@ function findConfigPathInDirs(
  * @param override - Override object whose values take precedence
  * @returns Merged object, or undefined if both inputs are undefined
  */
-function deepMerge<T extends Record<string, unknown>>(
+export function deepMerge<T extends Record<string, unknown>>(
   base?: T,
   override?: T,
 ): T | undefined {
@@ -132,45 +254,25 @@ function deepMerge<T extends Record<string, unknown>>(
  * deep-merged, while top-level arrays are replaced entirely by project config.
  *
  * @param directory - Project directory to search for .opencode config
+ * @param options - Optional load options including onWarning callback
  * @returns Merged plugin configuration (empty object if no configs found)
  */
-export function loadPluginConfig(directory: string): PluginConfig {
-  const userConfigPath = findConfigPathInDirs(
-    getConfigSearchDirs(),
-    'oh-my-opencode-slim',
-  );
-
-  const projectConfigBasePath = path.join(
-    directory,
-    '.opencode',
-    'oh-my-opencode-slim',
-  );
-
-  // Find existing config files (preferring .jsonc over .json)
-  const projectConfigPath = findConfigPath(projectConfigBasePath);
+export function loadPluginConfig(
+  directory: string,
+  options?: LoadPluginConfigOptions,
+): PluginConfig {
+  const { userConfigPath, projectConfigPath } =
+    findPluginConfigPaths(directory);
 
   let config: PluginConfig = userConfigPath
-    ? (loadConfigFromPath(userConfigPath) ?? {})
+    ? (loadConfigFromPath(userConfigPath, options) ?? {})
     : {};
 
   const projectConfig = projectConfigPath
-    ? loadConfigFromPath(projectConfigPath)
+    ? loadConfigFromPath(projectConfigPath, options)
     : null;
   if (projectConfig) {
-    config = {
-      ...config,
-      ...projectConfig,
-      agents: deepMerge(config.agents, projectConfig.agents),
-      tmux: deepMerge(config.tmux, projectConfig.tmux),
-      multiplexer: deepMerge(config.multiplexer, projectConfig.multiplexer),
-      interview: deepMerge(config.interview, projectConfig.interview),
-      sessionManager: deepMerge(
-        config.sessionManager,
-        projectConfig.sessionManager,
-      ),
-      fallback: deepMerge(config.fallback, projectConfig.fallback),
-      council: deepMerge(config.council, projectConfig.council),
-    };
+    config = mergePluginConfigs(config, projectConfig);
   }
 
   // Migrate legacy tmux config to multiplexer config for backward compatibility
@@ -195,9 +297,15 @@ export function loadPluginConfig(directory: string): PluginConfig {
       const availablePresets = config.presets
         ? Object.keys(config.presets).join(', ')
         : 'none';
-      console.warn(
-        `[oh-my-opencode-slim] Preset "${config.preset}" not found (from ${presetSource}). Available presets: ${availablePresets}`,
-      );
+      const message = `Preset "${config.preset}" not found (from ${presetSource}). Available presets: ${availablePresets}`;
+      options?.onWarning?.({
+        path: projectConfigPath ?? userConfigPath ?? '',
+        kind: 'missing-preset',
+        message,
+      });
+      if (!options?.silent) {
+        console.warn(`[oh-my-opencode-slim] ${message}`);
+      }
     }
   }
 

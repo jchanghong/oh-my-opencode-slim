@@ -189,6 +189,30 @@ export const SessionManagerConfigSchema = z.object({
 
 export type SessionManagerConfig = z.infer<typeof SessionManagerConfigSchema>;
 
+export const DivoomConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  python: z
+    .string()
+    .min(1)
+    .default(
+      '/Applications/Divoom MiniToo.app/Contents/Resources/.venv/bin/python',
+    ),
+  script: z
+    .string()
+    .min(1)
+    .default(
+      '/Applications/Divoom MiniToo.app/Contents/Resources/tools/divoom_send.py',
+    ),
+  size: z.number().int().min(1).max(1024).default(128),
+  fps: z.number().int().min(1).max(60).default(8),
+  speed: z.number().int().min(1).max(10_000).default(125),
+  maxFrames: z.number().int().min(1).max(500).default(24),
+  posterizeBits: z.number().int().min(1).max(8).default(3),
+  gifs: z.record(z.string(), z.string().min(1)).optional(),
+});
+
+export type DivoomConfig = z.infer<typeof DivoomConfigSchema>;
+
 // Todo continuation configuration
 export const TodoContinuationConfigSchema = z.object({
   maxContinuations: z
@@ -282,12 +306,6 @@ export const PluginConfigSchema = z
     setDefaultAgent: z.boolean().optional(),
     scoringEngineVersion: z.enum(['v1', 'v2-shadow', 'v2']).optional(),
     balanceProviderUsage: z.boolean().optional(),
-    showStartupToast: z
-      .boolean()
-      .optional()
-      .describe(
-        'Show the startup activation toast when OpenCode starts. Defaults to true.',
-      ),
     autoUpdate: z
       .boolean()
       .optional()
@@ -315,6 +333,7 @@ export const PluginConfigSchema = z
     websearch: WebsearchConfigSchema.optional(),
     interview: InterviewConfigSchema.optional(),
     sessionManager: SessionManagerConfigSchema.optional(),
+    divoom: DivoomConfigSchema.optional(),
     todoContinuation: TodoContinuationConfigSchema.optional(),
     fallback: FailoverConfigSchema.optional(),
     council: CouncilConfigSchema.optional(),

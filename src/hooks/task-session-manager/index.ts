@@ -6,6 +6,7 @@ import {
   deriveTaskSessionLabel,
   parseTaskIdFromTaskOutput,
   SessionManager,
+  SLIM_INTERNAL_INITIATOR_MARKER,
 } from '../../utils';
 
 interface TaskArgs {
@@ -42,6 +43,24 @@ interface PendingContextFile {
   lines: Set<number>;
   lastReadAt: number;
 }
+
+interface ChatMessagePart {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+interface ChatMessage {
+  info: {
+    role: string;
+    agent?: string;
+    sessionID?: string;
+  };
+  parts: ChatMessagePart[];
+}
+
+const RESUMABLE_SESSIONS_START = '<resumable_sessions>';
+const RESUMABLE_SESSIONS_END = '</resumable_sessions>';
 
 function isAgentName(value: unknown): value is AgentName {
   return typeof value === 'string' && AGENT_NAME_SET.has(value as AgentName);
@@ -107,6 +126,7 @@ export function createTaskSessionManagerHook(
   const pendingCallOrder: string[] = [];
   const contextByTask = new Map<string, Map<string, PendingContextFile>>();
   const pendingManagedTaskIds = new Set<string>();
+  let anonymousPendingCallId = 0;
 
   function addTaskContext(taskId: string, files: ContextFile[]): void {
     if (files.length === 0) return;
@@ -167,6 +187,16 @@ export function createTaskSessionManagerHook(
     );
   }
 
+  function pendingCallId(input: {
+    callID?: string;
+    sessionID?: string;
+  }): string {
+    return (
+      input.callID ??
+      `${input.sessionID ?? 'unknown'}:anonymous-${++anonymousPendingCallId}`
+    );
+  }
+
   function rememberPendingCall(call: PendingTaskCall): void {
     const existingIndex = pendingCallOrder.indexOf(call.callId);
     if (existingIndex >= 0) {
@@ -185,17 +215,31 @@ export function createTaskSessionManagerHook(
     }
   }
 
-  function takePendingCall(callId?: string): PendingTaskCall | undefined {
-    if (!callId) return undefined;
-    const pending = pendingCalls.get(callId);
-    pendingCalls.delete(callId);
+  function takePendingCall(
+    callId?: string,
+    parentSessionId?: string,
+  ): PendingTaskCall | undefined {
+    const resolvedCallId = callId ?? firstPendingCallForParent(parentSessionId);
+    if (!resolvedCallId) return undefined;
 
-    const orderIndex = pendingCallOrder.indexOf(callId);
+    const pending = pendingCalls.get(resolvedCallId);
+    pendingCalls.delete(resolvedCallId);
+
+    const orderIndex = pendingCallOrder.indexOf(resolvedCallId);
     if (orderIndex >= 0) {
       pendingCallOrder.splice(orderIndex, 1);
     }
 
     return pending;
+  }
+
+  function firstPendingCallForParent(
+    parentSessionId?: string,
+  ): string | undefined {
+    if (!parentSessionId) return undefined;
+    return pendingCallOrder.find(
+      (callId) => pendingCalls.get(callId)?.parentSessionId === parentSessionId,
+    );
   }
 
   return {
@@ -219,14 +263,16 @@ export function createTaskSessionManagerHook(
         agentType: args.subagent_type,
       });
 
-      if (input.callID) {
-        rememberPendingCall({
-          callId: input.callID,
-          parentSessionId: input.sessionID,
-          agentType: args.subagent_type,
-          label,
-        });
-      }
+      const pendingCall: PendingTaskCall = {
+        callId: pendingCallId({
+          callID: input.callID,
+          sessionID: input.sessionID,
+        }),
+        parentSessionId: input.sessionID,
+        agentType: args.subagent_type,
+        label,
+      };
+      rememberPendingCall(pendingCall);
 
       if (typeof args.task_id !== 'string' || args.task_id.trim() === '') {
         return;
@@ -251,15 +297,8 @@ export function createTaskSessionManagerHook(
         args.subagent_type,
         remembered.taskId,
       );
-      if (input.callID) {
-        rememberPendingCall({
-          callId: input.callID,
-          parentSessionId: input.sessionID,
-          agentType: args.subagent_type,
-          label,
-          resumedTaskId: remembered.taskId,
-        });
-      }
+      pendingCall.resumedTaskId = remembered.taskId;
+      rememberPendingCall(pendingCall);
     },
 
     'tool.execute.after': async (
@@ -278,7 +317,7 @@ export function createTaskSessionManagerHook(
 
       if (input.tool.toLowerCase() !== 'task') return;
 
-      const pending = takePendingCall(input.callID);
+      const pending = takePendingCall(input.callID, input.sessionID);
 
       if (!pending || typeof output.output !== 'string') return;
       const taskId = parseTaskIdFromTaskOutput(output.output);
@@ -316,17 +355,40 @@ export function createTaskSessionManagerHook(
       pruneContext();
     },
 
-    'experimental.chat.system.transform': async (
-      input: { sessionID?: string },
-      output: { system: string[] },
+    'experimental.chat.messages.transform': async (
+      _input: Record<string, never>,
+      output: { messages: ChatMessage[] },
     ): Promise<void> => {
-      if (!input.sessionID || !options.shouldManageSession(input.sessionID)) {
+      for (let i = output.messages.length - 1; i >= 0; i -= 1) {
+        const message = output.messages[i];
+        if (message.info.role !== 'user') continue;
+        if (message.info.agent && message.info.agent !== 'orchestrator') return;
+        if (
+          !message.info.sessionID ||
+          !options.shouldManageSession(message.info.sessionID)
+        ) {
+          return;
+        }
+
+        const reminder = sessionManager.formatForPrompt(message.info.sessionID);
+        if (!reminder) return;
+
+        const textPart = message.parts.find(
+          (part) => part.type === 'text' && typeof part.text === 'string',
+        );
+        if (!textPart) return;
+        if (textPart.text?.includes(SLIM_INTERNAL_INITIATOR_MARKER)) return;
+        if (textPart.text?.includes(RESUMABLE_SESSIONS_START)) return;
+
+        textPart.text = [
+          textPart.text ?? '',
+          '',
+          RESUMABLE_SESSIONS_START,
+          reminder,
+          RESUMABLE_SESSIONS_END,
+        ].join('\n');
         return;
       }
-
-      const reminder = sessionManager.formatForPrompt(input.sessionID);
-      if (!reminder) return;
-      output.system.push(reminder);
     },
 
     event: async (input: {
@@ -355,8 +417,8 @@ export function createTaskSessionManagerHook(
         input.event.properties?.info?.id ?? input.event.properties?.sessionID;
       if (!sessionId) return;
 
-      sessionManager.clearParent(sessionId);
       sessionManager.dropTask(sessionId);
+      sessionManager.clearParent(sessionId);
       contextByTask.delete(sessionId);
       pendingManagedTaskIds.delete(sessionId);
       pruneContext();

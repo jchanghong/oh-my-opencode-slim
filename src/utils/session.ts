@@ -2,16 +2,59 @@
  * Shared session utilities for council and background managers.
  */
 
-import type { PluginInput } from "@opencode-ai/plugin";
+import type { PluginInput } from '@opencode-ai/plugin';
 
-type OpencodeClient = PluginInput["client"];
+type OpencodeClient = PluginInput['client'];
+
+export const SESSION_ABORT_TIMEOUT_MS = 1_000;
+
+export class OperationTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OperationTimeoutError";
+  }
+}
+
+export async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  if (timeoutMs <= 0) return operation;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new OperationTimeoutError(message));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function abortSessionWithTimeout(
+  client: OpencodeClient,
+  sessionId: string,
+  timeoutMs = SESSION_ABORT_TIMEOUT_MS
+): Promise<void> {
+  await withTimeout(
+    client.session.abort({ path: { id: sessionId } }),
+    timeoutMs,
+    `Session abort timed out after ${timeoutMs}ms`
+  );
+}
 
 /**
  * Extract the short model label from a "provider/model" string.
  * E.g. "openai/gpt-5.4-mini" → "gpt-5.4-mini"
  */
 export function shortModelLabel(model: string): string {
-  return model.split("/").pop() ?? model;
+  return model.split('/').pop() ?? model;
 }
 
 export type PromptBody = {
@@ -21,7 +64,7 @@ export type PromptBody = {
   noReply?: boolean;
   system?: string;
   tools?: { [key: string]: boolean };
-  parts: Array<{ type: "text"; text: string }>;
+  parts: Array<{ type: 'text'; text: string }>;
   variant?: string;
 };
 
@@ -31,9 +74,9 @@ export type PromptBody = {
  * @returns Object with providerID and modelID, or null if invalid
  */
 export function parseModelReference(
-  model: string
+  model: string,
 ): { providerID: string; modelID: string } | null {
-  const slashIndex = model.indexOf("/");
+  const slashIndex = model.indexOf('/');
   if (slashIndex <= 0 || slashIndex >= model.length - 1) {
     return null;
   }
@@ -53,8 +96,8 @@ export function parseModelReference(
  */
 export async function promptWithTimeout(
   client: OpencodeClient,
-  args: Parameters<OpencodeClient["session"]["prompt"]>[0],
-  timeoutMs: number
+  args: Parameters<OpencodeClient['session']['prompt']>[0],
+  timeoutMs: number,
 ): Promise<void> {
   if (timeoutMs <= 0) {
     await client.session.prompt(args);
@@ -72,11 +115,23 @@ export async function promptWithTimeout(
       promptPromise,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          client.session.abort({ path: { id: sessionId } }).catch(() => {});
-          reject(new Error(`Prompt timed out after ${timeoutMs}ms`));
+          reject(
+            new OperationTimeoutError(
+              `Prompt timed out after ${timeoutMs}ms`,
+            ),
+          );
         }, timeoutMs);
       }),
     ]);
+  } catch (error) {
+    if (error instanceof OperationTimeoutError) {
+      try {
+        await abortSessionWithTimeout(client, sessionId);
+      } catch {
+        // Best-effort cleanup: preserve the original prompt timeout error.
+      }
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -104,7 +159,7 @@ export interface SessionExtractionResult {
 export async function extractSessionResult(
   client: OpencodeClient,
   sessionId: string,
-  options?: { includeReasoning?: boolean }
+  options?: { includeReasoning?: boolean },
 ): Promise<SessionExtractionResult> {
   const includeReasoning = options?.includeReasoning ?? true;
 
@@ -116,21 +171,21 @@ export async function extractSessionResult(
     parts?: Array<{ type: string; text?: string }>;
   }>;
   const assistantMessages = messages.filter(
-    (m) => m.info?.role === "assistant"
+    (m) => m.info?.role === 'assistant',
   );
 
   const extractedContent: string[] = [];
   for (const message of assistantMessages) {
     for (const part of message.parts ?? []) {
       const allowed = includeReasoning
-        ? part.type === "text" || part.type === "reasoning"
-        : part.type === "text";
+        ? part.type === 'text' || part.type === 'reasoning'
+        : part.type === 'text';
       if (allowed && part.text) {
         extractedContent.push(part.text);
       }
     }
   }
 
-  const text = extractedContent.filter((t) => t.length > 0).join("\n\n");
+  const text = extractedContent.filter((t) => t.length > 0).join('\n\n');
   return { text, empty: text.length === 0 };
 }

@@ -1,9 +1,21 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { createAgents, getAgentConfigs, getDisabledAgents } from './agents';
 import { buildOrchestratorPrompt } from './agents/orchestrator';
-import { loadPluginConfig, type MultiplexerConfig } from './config';
+import {
+  type AgentOverrideConfig,
+  deepMerge,
+  loadPluginConfig,
+  type MultiplexerConfig,
+} from './config';
 import { parseList } from './config/agent-mcps';
+import { AGENT_ALIASES } from './config/constants';
+import {
+  getActiveRuntimePreset,
+  getPreviousRuntimePreset,
+  setActiveRuntimePreset,
+} from './config/runtime-preset';
 import { CouncilManager } from './council';
+import { createDivoomManager } from './divoom/manager';
 import {
   createApplyPatchHook,
   createAutoUpdateCheckerHook,
@@ -32,6 +44,7 @@ import {
   createPresetManager,
   createWebfetchTool,
 } from './tools';
+import { recordTuiAgentModel, recordTuiAgentModels } from './tui-state';
 import {
   createDisplayNameMentionRewriter,
   resolveRuntimeAgentName,
@@ -85,6 +98,11 @@ async function probeJSDOM(): Promise<string | null> {
   }
 }
 
+// Module-level runtime preset tracking. Survives plugin re-inits triggered
+// by client.config.update() → Instance.dispose(). When the plugin function
+// re-runs, it checks this variable and applies the runtime preset instead
+// of the config file's preset. State lives in config/runtime-preset.ts.
+
 const OhMyOpenCodeLite: Plugin = async (ctx) => {
   const sessionId = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
   initLogger(sessionId);
@@ -118,6 +136,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let taskSessionManagerHook: ReturnType<typeof createTaskSessionManagerHook>;
   let interviewManager: ReturnType<typeof createInterviewManager>;
   let presetManager: ReturnType<typeof createPresetManager>;
+  let divoomManager: ReturnType<typeof createDivoomManager>;
   let councilTools: Record<string, unknown>;
   let webfetch: ReturnType<typeof createWebfetchTool>;
   let rewriteDisplayNameMentions: ReturnType<
@@ -129,6 +148,25 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
 
   try {
     config = loadPluginConfig(ctx.directory);
+
+    // Safety net: if a runtime preset was set via /preset command and
+    // OpenCode ever fully re-runs the plugin function (not just the
+    // config() hook), override config.preset so agents are created with
+    // the correct models. Currently only the config() hook re-runs after
+    // Instance.dispose(), so this is a defensive guard.
+    const runtimePreset = getActiveRuntimePreset();
+    if (runtimePreset && config.presets?.[runtimePreset]) {
+      config.preset = runtimePreset;
+      // Re-merge runtime preset into config.agents (loadPluginConfig
+      // already merged the config-file preset, not the runtime one).
+      // Runtime preset is override so it wins over config-file preset.
+      const presetAgents = config.presets[runtimePreset];
+      config.agents = deepMerge(config.agents, presetAgents);
+    } else if (runtimePreset) {
+      // Preset was deleted from config since last switch — clear stale state
+      setActiveRuntimePreset(null);
+    }
+
     disabledAgents = getDisabledAgents(config);
     rewriteDisplayNameMentions = createDisplayNameMentionRewriter(config);
     agentDefs = createAgents(config);
@@ -220,7 +258,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
 
     // Initialize auto-update checker hook
     autoUpdateChecker = createAutoUpdateCheckerHook(ctx, {
-      showStartupToast: config.showStartupToast ?? true,
       autoUpdate: config.autoUpdate ?? true,
     });
 
@@ -273,6 +310,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     });
     interviewManager = createInterviewManager(ctx, config);
     presetManager = createPresetManager(ctx, config);
+    divoomManager = createDivoomManager(config.divoom);
 
     toolCount =
       Object.keys(councilTools).length +
@@ -334,6 +372,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       appLog(ctx, 'warn', msg).catch(() => {});
     }
   });
+
+  divoomManager.onPluginLoad();
 
   return {
     name: 'oh-my-opencode-slim',
@@ -472,6 +512,142 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         }
       }
 
+      // Runtime preset override: if /preset switched to a runtime preset,
+      // override the model/variant/temperature from the preset's agent
+      // config. This runs after the normal model resolution because the
+      // config() hook re-runs with stale modelArrayMap after dispose(),
+      // but the runtime preset data is in the captured `config` closure.
+      const runtimePresetName = getActiveRuntimePreset();
+      if (runtimePresetName && config.presets?.[runtimePresetName]) {
+        const runtimePreset = config.presets[runtimePresetName];
+        for (const [agentName, override] of Object.entries(runtimePreset)) {
+          // Resolve legacy alias keys (e.g. "explore" → "explorer")
+          // so presets using aliases work in this path.
+          const resolvedName = AGENT_ALIASES[agentName] ?? agentName;
+          const entry = configAgent[resolvedName] as
+            | Record<string, unknown>
+            | undefined;
+          if (!entry) continue;
+
+          if (typeof override.model === 'string') {
+            entry.model = override.model;
+          } else if (
+            Array.isArray(override.model) &&
+            override.model.length > 0
+          ) {
+            const first = override.model[0];
+            entry.model = typeof first === 'string' ? first : first.id;
+            // Extract inline variant from array-form model entry
+            if (typeof first !== 'string' && first.variant) {
+              entry.variant = first.variant;
+            }
+          }
+          // Explicitly set or clear scalar fields so switching from
+          // Preset A (which sets a field) to Preset B (which doesn't)
+          // doesn't leave stale values behind.
+          if (typeof override.variant === 'string') {
+            entry.variant = override.variant;
+          } else if ('variant' in override) {
+            delete entry.variant;
+          }
+          if (typeof override.temperature === 'number') {
+            entry.temperature = override.temperature;
+          } else if ('temperature' in override) {
+            delete entry.temperature;
+          }
+          if (
+            override.options &&
+            typeof override.options === 'object' &&
+            !Array.isArray(override.options)
+          ) {
+            entry.options = override.options;
+          } else if ('options' in override) {
+            delete entry.options;
+          }
+          log('[plugin] runtime preset override', {
+            preset: runtimePresetName,
+            agent: agentName,
+            model: entry.model as string,
+          });
+        }
+
+        // Reset agents from the previous preset that aren't in the new one.
+        // The stale model resolution above overwrites the reset values sent
+        // by preset-manager, so we re-apply them here from config-file
+        // baseline.
+        const prevPresetName = getPreviousRuntimePreset();
+        if (prevPresetName && config.presets?.[prevPresetName]) {
+          const prevPreset = config.presets[prevPresetName];
+          // Build resolved key set from new preset for correct comparison
+          // (handles alias keys like "explore" → "explorer")
+          const newPresetResolved = new Set(
+            Object.keys(runtimePreset).map((k) => AGENT_ALIASES[k] ?? k),
+          );
+          for (const agentName of Object.keys(prevPreset)) {
+            const resolvedName = AGENT_ALIASES[agentName] ?? agentName;
+            if (newPresetResolved.has(resolvedName)) continue; // new preset handles it
+            const entry = configAgent[resolvedName] as
+              | Record<string, unknown>
+              | undefined;
+            if (!entry) continue;
+            // Reset to config-file baseline. Use the previous preset's
+            // override to identify which fields to clear even when the
+            // baseline doesn't define them.
+            const baseline = config.agents?.[resolvedName];
+            const prevOverride = prevPreset[agentName] as
+              | AgentOverrideConfig
+              | undefined;
+            if (typeof baseline?.model === 'string') {
+              entry.model = baseline.model;
+            }
+            if (typeof baseline?.variant === 'string') {
+              entry.variant = baseline.variant;
+            } else if (prevOverride && 'variant' in prevOverride) {
+              delete entry.variant;
+            }
+            if (typeof baseline?.temperature === 'number') {
+              entry.temperature = baseline.temperature;
+            } else if (prevOverride && 'temperature' in prevOverride) {
+              delete entry.temperature;
+            }
+            if (
+              baseline?.options &&
+              typeof baseline.options === 'object' &&
+              !Array.isArray(baseline.options)
+            ) {
+              entry.options = baseline.options;
+            } else if (prevOverride && 'options' in prevOverride) {
+              delete entry.options;
+            }
+            log('[plugin] runtime preset reset from previous', {
+              previousPreset: prevPresetName,
+              agent: resolvedName,
+              model: entry.model as string,
+            });
+          }
+        }
+      }
+
+      const tuiAgentModels: Record<string, string> = {};
+      for (const agentDef of agentDefs) {
+        if (agentDef.name === 'councillor') continue;
+
+        const entry = configAgent[agentDef.name] as
+          | Record<string, unknown>
+          | undefined;
+        const resolvedModel =
+          typeof entry?.model === 'string'
+            ? entry.model
+            : runtimeChains[agentDef.name]?.[0]
+              ? runtimeChains[agentDef.name][0]
+              : typeof agentDef.config.model === 'string'
+                ? agentDef.config.model
+                : undefined;
+
+        tuiAgentModels[agentDef.name] = resolvedModel ?? 'default';
+      }
+      recordTuiAgentModels({ agentModels: tuiAgentModels });
+
       // Merge MCP configs
       const configMcp = opencodeConfig.mcp as
         | Record<string, unknown>
@@ -551,11 +727,35 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       const event = input.event as {
         type: string;
         properties?: {
-          info?: { id?: string; parentID?: string; title?: string };
+          info?: {
+            id?: string;
+            parentID?: string;
+            title?: string;
+            agent?: string;
+            providerID?: string;
+            modelID?: string;
+            sessionID?: string;
+          };
           sessionID?: string;
+          id?: string;
+          requestID?: string;
           status?: { type: string };
         };
       };
+
+      if (event.type === 'message.updated') {
+        const info = event.properties?.info;
+        if (
+          typeof info?.agent === 'string' &&
+          typeof info.providerID === 'string' &&
+          typeof info.modelID === 'string'
+        ) {
+          recordTuiAgentModel({
+            agentName: resolveRuntimeAgentName(config, info.agent),
+            model: `${info.providerID}/${info.modelID}`,
+          });
+        }
+      }
 
       if (event.type === 'session.created') {
         const childSessionId = event.properties?.info?.id;
@@ -589,18 +789,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
       );
 
-      await postFileToolNudgeHook.event(
-        input as {
-          event: {
-            type: string;
-            properties?: {
-              info?: { id?: string };
-              sessionID?: string;
-            };
-          };
-        },
-      );
-
       await taskSessionManagerHook.event(
         input as {
           event: {
@@ -609,6 +797,60 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           };
         },
       );
+
+      if (
+        event.type === 'permission.asked' ||
+        event.type === 'question.asked'
+      ) {
+        const props = event.properties as
+          | { sessionID?: string; id?: string; requestID?: string }
+          | undefined;
+        divoomManager.onUserInputRequired({
+          sessionId: props?.sessionID,
+          requestId: props?.id ?? props?.requestID,
+        });
+      }
+
+      if (
+        event.type === 'permission.replied' ||
+        event.type === 'question.replied' ||
+        event.type === 'question.rejected'
+      ) {
+        const props = event.properties as
+          | { sessionID?: string; requestID?: string; id?: string }
+          | undefined;
+        divoomManager.onUserInputResolved({
+          sessionId: props?.sessionID,
+          requestId: props?.requestID ?? props?.id,
+        });
+      }
+
+      if (input.event.type === 'session.status') {
+        const props = input.event.properties as
+          | { sessionID?: string; status?: { type?: string } }
+          | undefined;
+        const sessionID = props?.sessionID;
+        divoomManager.onOrchestratorStatus({
+          sessionId: sessionID,
+          status: props?.status?.type,
+          isOrchestrator: sessionID
+            ? sessionAgentMap.get(sessionID) === 'orchestrator'
+            : false,
+        });
+      }
+
+      if (input.event.type === 'session.deleted') {
+        const props = input.event.properties as
+          | { info?: { id?: string }; sessionID?: string }
+          | undefined;
+        const sessionID = props?.info?.id ?? props?.sessionID;
+        divoomManager.onSessionDeleted({
+          sessionId: sessionID,
+          isOrchestrator: sessionID
+            ? sessionAgentMap.get(sessionID) === 'orchestrator'
+            : false,
+        });
+      }
 
       if (input.event.type === 'session.deleted') {
         const props = input.event.properties as
@@ -646,6 +888,14 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
         output as { args?: unknown },
       );
+
+      if (input.tool.toLowerCase() === 'task') {
+        divoomManager.onTaskStart({
+          parentSessionId: input.sessionID,
+          callId: input.callID,
+          args: output.args,
+        });
+      }
     },
 
     // Direct interception of /auto-continue command — bypasses LLM
@@ -749,17 +999,6 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         }
       }
 
-      await todoContinuationHook.handleChatSystemTransform(input, output);
-      await postFileToolNudgeHook['experimental.chat.system.transform'](
-        input,
-        output,
-      );
-
-      await taskSessionManagerHook['experimental.chat.system.transform'](
-        input,
-        output,
-      );
-
       // Collapse to single system message for provider compatibility.
       // Some providers (e.g. Qwen via VLLM/DashScope) reject multiple
       // system messages. Sub-hooks above may push additional entries; join
@@ -814,6 +1053,10 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       await todoContinuationHook.handleMessagesTransform({
         messages: typedOutput.messages,
       });
+      await taskSessionManagerHook['experimental.chat.messages.transform'](
+        input,
+        typedOutput,
+      );
       await phaseReminderHook['experimental.chat.messages.transform'](
         input,
         typedOutput,
@@ -827,52 +1070,92 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     // Post-tool hooks: retry guidance for delegation errors + file-tool
     // nudge
     'tool.execute.after': async (input, output) => {
-      await delegateTaskRetryHook['tool.execute.after'](
-        input as { tool: string },
-        output as { output: unknown },
+      const meta = input as {
+        tool?: string;
+        sessionID?: string;
+        callID?: string;
+      };
+      const runPostToolHook = async (
+        name: string,
+        fn: () => Promise<void>,
+      ): Promise<void> => {
+        try {
+          await fn();
+        } catch (error) {
+          log('[plugin] post-tool hook failed open', {
+            hook: name,
+            tool: meta.tool,
+            sessionID: meta.sessionID,
+            callID: meta.callID,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      };
+
+      await runPostToolHook('delegate-task-retry', () =>
+        delegateTaskRetryHook['tool.execute.after'](
+          input as { tool: string },
+          output as { output: unknown },
+        ),
       );
 
-      await jsonErrorRecoveryHook['tool.execute.after'](
-        input as {
-          tool: string;
-          sessionID: string;
-          callID: string;
-        },
-        output as {
-          title: string;
-          output: unknown;
-          metadata: unknown;
-        },
+      await runPostToolHook('json-error-recovery', () =>
+        jsonErrorRecoveryHook['tool.execute.after'](
+          input as {
+            tool: string;
+            sessionID: string;
+            callID: string;
+          },
+          output as {
+            title: string;
+            output: unknown;
+            metadata: unknown;
+          },
+        ),
       );
 
-      await todoContinuationHook.handleToolExecuteAfter(
-        input as {
-          tool: string;
-          sessionID?: string;
-        },
+      await runPostToolHook('todo-continuation', () =>
+        todoContinuationHook.handleToolExecuteAfter(
+          input as {
+            tool: string;
+            sessionID?: string;
+          },
+          output as { output?: unknown },
+        ),
       );
 
-      await postFileToolNudgeHook['tool.execute.after'](
-        input as {
-          tool: string;
-          sessionID?: string;
-          callID?: string;
-        },
-        output as {
-          title: string;
-          output: string;
-          metadata: Record<string, unknown>;
-        },
+      await runPostToolHook('post-file-tool-nudge', () =>
+        postFileToolNudgeHook['tool.execute.after'](
+          input as {
+            tool: string;
+            sessionID?: string;
+            callID?: string;
+          },
+          output as {
+            title: string;
+            output: string;
+            metadata: Record<string, unknown>;
+          },
+        ),
       );
 
-      await taskSessionManagerHook['tool.execute.after'](
-        input as {
-          tool: string;
-          sessionID?: string;
-          callID?: string;
-        },
-        output as { output: unknown },
+      await runPostToolHook('task-session-manager', () =>
+        taskSessionManagerHook['tool.execute.after'](
+          input as {
+            tool: string;
+            sessionID?: string;
+            callID?: string;
+          },
+          output as { output: unknown },
+        ),
       );
+
+      if (input.tool.toLowerCase() === 'task') {
+        divoomManager.onTaskEnd({
+          parentSessionId: input.sessionID,
+          callId: input.callID,
+        });
+      }
     },
   };
 };
