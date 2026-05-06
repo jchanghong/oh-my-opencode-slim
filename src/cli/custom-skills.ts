@@ -5,9 +5,9 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getConfigDir } from './paths';
 
 /**
  * A custom skill bundled in this repository.
@@ -44,9 +44,10 @@ export const CUSTOM_SKILLS: CustomSkill[] = [
 
 /**
  * Get the target directory for custom skills installation.
+ * Default: ~/.agents/skills
  */
 export function getCustomSkillsDir(): string {
-  return join(getConfigDir(), 'skills');
+  return join(homedir(), '.agents', 'skills');
 }
 
 /**

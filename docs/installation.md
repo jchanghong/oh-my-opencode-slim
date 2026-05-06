@@ -262,6 +262,6 @@ See the [Multiplexer Integration Guide](multiplexer-integration.md) for more det
 3. **Remove skills (optional)**:
    ```bash
    npx skills remove agent-browser
-   rm -rf ~/.config/opencode/skills/simplify
-   rm -rf ~/.config/opencode/skills/codemap
+   rm -rf ~/.agents/skills/simplify
+   rm -rf ~/.agents/skills/codemap
    ```
