@@ -22,6 +22,25 @@ The script does **not** guarantee documentation quality. Content quality comes
 from the codemap skill workflow and the agent reading, synthesizing, and filling
 the generated skeletons with project-specific explanations.
 
+The content-writing workflow is bottom-up. Leaf directories are documented first,
+then intermediate directories, then top-level directories, and the root atlas is
+finalized last. Large directories are not split across multiple writers; one
+`codemap.md` has one writer.
+
+Read requirements are strict:
+
+- Leaf directory writers must read the complete contents of every selected file
+  directly under that directory before writing its `codemap.md`.
+- Parent and intermediate directory writers must read the complete contents of
+  every selected direct file in that directory and the `codemap.md` of every
+  selected direct child directory.
+- Root atlas writers must read the complete contents of every selected direct
+  root file and the `codemap.md` of every selected top-level directory.
+
+Parent codemaps summarize direct responsibilities and child collaboration. They
+do not recursively reread all descendant source files; child codemaps are the
+authoritative input for child internals.
+
 Legacy `.slim/cartography.json` state is migrated to `.slim/codemap.json`
 automatically.
 

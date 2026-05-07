@@ -90,9 +90,9 @@ This creates:
 - starter `codemap.md` files in relevant directories without overwriting
   existing hand-written codemaps
 
-4. **Delegate folder codemap writing to Fixer agents when useful** - spawn one
-   fixer per independent folder. Each fixer must read enough code/docs/scripts
-   to replace the starter skeleton with a complete Module Codemap.
+4. **Write codemaps bottom-up** - one `codemap.md` has exactly one writer.
+   Leaf directories are written first, then intermediate directories, then
+   top-level directories, and the root Repository Atlas is finalized last.
 
 ### Step 3: Detect Changes (If state already exists)
 
@@ -115,6 +115,42 @@ node ~/.agents/skills/codemap/scripts/codemap.mjs update \
 ```
 
 ### Step 4: Write Folder / Module Codemaps
+
+Write directory codemaps from the deepest selected directories upward. The
+authoritative input for a parent directory is its own direct files plus the
+finished codemaps of its direct child directories. Do not split a large directory
+across multiple writers; handle it as a normal parent directory once its child
+codemaps are complete.
+
+Use this order:
+
+```text
+deepest leaf directories
+    ↓
+intermediate directories
+    ↓
+top-level directories
+    ↓
+root Repository Atlas
+```
+
+Read requirements are strict:
+
+- **Leaf directory** — before writing, read the complete contents of every
+  selected file directly under that directory. Do not rely only on filenames,
+  samples, tests, or summaries.
+- **Parent or intermediate directory** — before writing, read the complete
+  contents of every selected direct file in that directory and read the
+  `codemap.md` of every selected direct child directory. Do not recursively reread
+  grandchildren source; the child codemaps are the authoritative source for child
+  internals.
+- **Parallel writing** — directories at the same depth may be written in parallel
+  only when their child codemaps are already complete and they do not write the
+  same `codemap.md` file.
+
+A Module Codemap is incomplete if it skips any selected direct file, skips any
+selected direct child codemap, leaves starter skeleton text, or describes child
+internals without reading the child codemap first.
 
 For every non-root directory with selected files, write a complete Module
 Codemap. It must contain these sections:
@@ -149,6 +185,11 @@ Once important directories are mapped, create or update the root `codemap.md` as
 the first document a new contributor reads. It must not be only an aggregation
 table. It must include explanatory narrative, flow descriptions, diagrams, and
 links to deeper maps.
+
+Before writing the root Repository Atlas, read the complete contents of every
+selected direct file in the repository root and read the `codemap.md` of every
+selected top-level directory. Do not finalize the root atlas before top-level
+codemaps are complete.
 
 The root Repository Atlas must contain these sections:
 
