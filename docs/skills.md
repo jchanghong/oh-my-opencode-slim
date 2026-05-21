@@ -13,7 +13,7 @@ Bundled skills are installed by the `oh-my-opencode-slim` installer.
 | Skill | Description | Assigned to by default |
 |-------|-------------|----------------------|
 | [`simplify`](#simplify) | Behavior-preserving code simplification | `oracle` |
-| [`codemap`](#codemap) | New-contributor repository atlas generation | `orchestrator` |
+| [`codemap`](#codemap) | Repository codemap generation | `orchestrator` |
 | [`clonedeps`](#clonedeps) | Local dependency source cloning | `orchestrator` |
 
 ---
@@ -34,7 +34,7 @@ Source: adapted from Addy Osmani's `code-simplification` skill and bundled local
 
 **Automated repository mapping through hierarchical codemaps.**
 
-`codemap` empowers the Orchestrator to build and maintain a deep architectural understanding of any codebase. Instead of reading thousands of lines of code on every task, agents refer to hierarchical `codemap.md` files describing the *why* and *how* of each directory. The generated maps are full new-contributor guides, including an internal module relationship diagram and a normal business flow diagram in every `codemap.md`.
+`codemap` empowers the Orchestrator to build and maintain a deep architectural understanding of any codebase. Instead of reading thousands of lines of code on every task, agents refer to hierarchical `codemap.md` files describing the *why* and *how* of each directory.
 
 **How to use:** Ask the Orchestrator to `run codemap`. It automatically detects whether to initialize a new map or update an existing one.
 

@@ -234,7 +234,7 @@ ${enabledValidationRouting}
 <Communication>
 
 ## Clarity Over Assumptions
-- If request is vague, requirements are unclear, or multiple implementation approaches could produce meaningfully different outcomes, you MUST call the \`question\` tool to clarify before proceeding
+- If request is vague or has multiple valid interpretations, ask a targeted question before proceeding
 - Don't guess at critical details (file paths, API choices, architectural decisions)
 - Do make reasonable assumptions for minor details and state them briefly
 
@@ -259,6 +259,9 @@ When user's approach seems problematic:
 
 **Good:** "Checking Next.js App Router docs via @librarian..."
 [proceeds with implementation]
+
+## PARALLEL
+- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE
 
 </Communication>
 `;

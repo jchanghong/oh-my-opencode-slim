@@ -1,48 +1,16 @@
 # Codemap Skill
 
-Repository understanding and hierarchical codemap generation for new
-contributors.
+Repository understanding and hierarchical codemap generation.
 
 ## Overview
 
-Codemap helps orchestrators build a complete repository atlas that explains a
-project without requiring readers to inspect source first. A finished codemap
-should describe capabilities, entry points, architecture, normal flows, module
-responsibilities, configuration/state, dependencies, error handling, and common
-change paths.
+Codemap helps orchestrators map and understand codebases by:
 
-The script in this directory is intentionally narrow in scope:
+1. Selecting relevant code/config files using LLM judgment
+2. Creating `.slim/codemap.json` for change tracking
+3. Generating empty `codemap.md` templates for fixers to fill in
 
-1. It selects files from include/exclude patterns.
-2. It creates `.slim/codemap.json` for change tracking.
-3. It creates starter `codemap.md` skeletons without overwriting existing files.
-4. It reports changed files/folders for targeted updates.
-
-The script does **not** guarantee documentation quality. Content quality comes
-from the codemap skill workflow and the agent reading, synthesizing, and filling
-the generated skeletons with project-specific explanations.
-
-The content-writing workflow is bottom-up. Leaf directories are documented first,
-then intermediate directories, then top-level directories, and the root atlas is
-finalized last. Large directories are not split across multiple writers; one
-`codemap.md` has one writer.
-
-Read requirements are strict:
-
-- Leaf directory writers must read the complete contents of every selected file
-  directly under that directory before writing its `codemap.md`.
-- Parent and intermediate directory writers must read the complete contents of
-  every selected direct file in that directory and the `codemap.md` of every
-  selected direct child directory.
-- Root atlas writers must read the complete contents of every selected direct
-  root file and the `codemap.md` of every selected top-level directory.
-
-Parent codemaps summarize direct responsibilities and child collaboration. They
-do not recursively reread all descendant source files; child codemaps are the
-authoritative input for child internals.
-
-Legacy `.slim/cartography.json` state is migrated to `.slim/codemap.json`
-automatically.
+Legacy `.slim/cartography.json` state is migrated to `.slim/codemap.json` automatically.
 
 ## Commands
 
@@ -80,31 +48,12 @@ node codemap.mjs update --root /repo
 
 ### codemap.md (per folder)
 
-`init` creates two kinds of starter documents:
-
-- **Root Repository Atlas** at the repository root. It should become the first
-  document a new contributor reads, covering project positioning, capabilities,
-  entry points, end-to-end flow, architecture layers, module map,
-  configuration/state/data models, dependencies, recovery, task navigation,
-  glossary, and recommended reading order.
-- **Folder / Module Codemap** in each selected subdirectory. It should explain
-  module responsibility, the problem solved, key files/entities, external entry
-  points, internal control/data flow, dependencies, configuration/state, error
-  handling, design decisions, and modification guidance.
-
-Every finished `codemap.md` must contain two Mermaid diagrams:
-
-1. **当前目录下各个子目录或文件的模块关系图** — usually `flowchart LR` or
-   `graph LR`, showing how this directory's child directories and key files
-   call, depend on, configure, or collaborate with each other.
-2. **正常业务流程图** — usually `sequenceDiagram` or `flowchart TD`, showing the
-   successful normal path for the project/module.
-
-Each diagram must be followed by prose explaining node and arrow meanings. A
-finished codemap must not be only a directory list, one-sentence summary, empty
-skeleton, or aggregation table.
+Empty templates created in each folder for fixers to fill with:
+- Responsibility
+- Design patterns
+- Data/control flow
+- Integration points
 
 ## Installation
 
-Installed automatically via oh-my-opencode-slim installer when custom skills are
-enabled.
+Installed automatically via oh-my-opencode-slim installer when custom skills are enabled.
