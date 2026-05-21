@@ -8,8 +8,6 @@ import {
 } from '../multiplexer';
 import { log } from '../utils/logger';
 
-type OpencodeClient = PluginInput['client'];
-
 interface TrackedSession {
   sessionId: string;
   paneId: string;
@@ -18,6 +16,7 @@ interface TrackedSession {
   directory: string;
   createdAt: number;
   lastSeenAt: number;
+  seenInStatus: boolean;
   missingSince?: number;
 }
 
@@ -25,6 +24,13 @@ interface KnownSession {
   parentId: string;
   title: string;
   directory: string;
+}
+
+interface SharedSessionState {
+  sessions: Map<string, TrackedSession>;
+  knownSessions: Map<string, KnownSession>;
+  spawningSessions: Set<string>;
+  closingSessions: Map<string, Promise<void>>;
 }
 
 interface SessionEvent {
@@ -45,6 +51,32 @@ type CloseReason = 'idle' | 'deleted' | 'missing' | 'timeout';
 
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 const SESSION_MISSING_GRACE_MS = POLL_INTERVAL_BACKGROUND_MS * 3;
+const SHARED_STATE_KEY = Symbol.for(
+  'oh-my-opencode-slim.multiplexer-session-manager.state',
+);
+
+function getSharedState(): SharedSessionState {
+  const globalWithState = globalThis as typeof globalThis & {
+    [SHARED_STATE_KEY]?: SharedSessionState;
+  };
+
+  globalWithState[SHARED_STATE_KEY] ??= {
+    sessions: new Map(),
+    knownSessions: new Map(),
+    spawningSessions: new Set(),
+    closingSessions: new Map(),
+  };
+
+  return globalWithState[SHARED_STATE_KEY];
+}
+
+export function resetMultiplexerSessionManagerState(): void {
+  const state = getSharedState();
+  state.sessions.clear();
+  state.knownSessions.clear();
+  state.spawningSessions.clear();
+  state.closingSessions.clear();
+}
 
 /**
  * Tracks child sessions and spawns/closes multiplexer panes for them.
@@ -53,19 +85,24 @@ const SESSION_MISSING_GRACE_MS = POLL_INTERVAL_BACKGROUND_MS * 3;
  * with polling kept as a fallback for reliability.
  */
 export class MultiplexerSessionManager {
-  private client: OpencodeClient;
+  private instanceId = Math.random().toString(36).slice(2, 8);
   private serverUrl: string;
   private directory: string;
   private multiplexer: Multiplexer | null = null;
-  private sessions = new Map<string, TrackedSession>();
-  private knownSessions = new Map<string, KnownSession>();
-  private spawningSessions = new Set<string>();
-  private closingSessions = new Map<string, Promise<void>>();
+  private sessions: SharedSessionState['sessions'];
+  private knownSessions: SharedSessionState['knownSessions'];
+  private spawningSessions: SharedSessionState['spawningSessions'];
+  private closingSessions: SharedSessionState['closingSessions'];
   private pollInterval?: ReturnType<typeof setInterval>;
   private enabled = false;
 
   constructor(ctx: PluginInput, config: MultiplexerConfig) {
-    this.client = ctx.client;
+    const sharedState = getSharedState();
+    this.sessions = sharedState.sessions;
+    this.knownSessions = sharedState.knownSessions;
+    this.spawningSessions = sharedState.spawningSessions;
+    this.closingSessions = sharedState.closingSessions;
+
     this.directory = ctx.directory;
     const defaultPort = process.env.OPENCODE_PORT ?? '4096';
     this.serverUrl =
@@ -78,9 +115,12 @@ export class MultiplexerSessionManager {
       this.multiplexer.isInsideSession();
 
     log('[multiplexer-session-manager] initialized', {
+      instanceId: this.instanceId,
       enabled: this.enabled,
       type: config.type,
       serverUrl: this.serverUrl,
+      trackedSessions: this.sessions.size,
+      knownSessions: this.knownSessions.size,
     });
   }
 
@@ -100,6 +140,7 @@ export class MultiplexerSessionManager {
 
     if (this.isTrackedOrSpawning(sessionId)) {
       log('[multiplexer-session-manager] session already tracked or spawning', {
+        instanceId: this.instanceId,
         sessionId,
       });
       return;
@@ -122,6 +163,7 @@ export class MultiplexerSessionManager {
       const serverRunning = await isServerRunning(this.serverUrl);
       if (!serverRunning) {
         log('[multiplexer-session-manager] server not running, skipping', {
+          instanceId: this.instanceId,
           serverUrl: this.serverUrl,
         });
         return;
@@ -137,6 +179,7 @@ export class MultiplexerSessionManager {
           sessionId,
           parentId,
           title,
+          instanceId: this.instanceId,
         },
       );
 
@@ -144,6 +187,7 @@ export class MultiplexerSessionManager {
         .spawnPane(sessionId, title, this.serverUrl, directory)
         .catch((err) => {
           log('[multiplexer-session-manager] failed to spawn pane', {
+            instanceId: this.instanceId,
             error: String(err),
           });
           return { success: false, paneId: undefined };
@@ -161,6 +205,7 @@ export class MultiplexerSessionManager {
             {
               sessionId,
               paneId: paneResult.paneId,
+              instanceId: this.instanceId,
               error: String(err),
             },
           ),
@@ -177,9 +222,11 @@ export class MultiplexerSessionManager {
         directory,
         createdAt: now,
         lastSeenAt: now,
+        seenInStatus: false,
       });
 
       log('[multiplexer-session-manager] pane spawned', {
+        instanceId: this.instanceId,
         sessionId,
         paneId: paneResult.paneId,
       });
@@ -192,6 +239,22 @@ export class MultiplexerSessionManager {
 
   async onSessionStatus(event: SessionEvent): Promise<void> {
     if (!this.enabled) return;
+
+    if (event.type === 'session.idle') {
+      const sessionId = event.properties?.sessionID;
+      if (!sessionId) return;
+
+      log('[multiplexer-session-manager] session idle event received', {
+        instanceId: this.instanceId,
+        sessionId,
+        tracked: this.sessions.has(sessionId),
+        known: this.knownSessions.has(sessionId),
+      });
+
+      await this.closeSession(sessionId, 'idle');
+      return;
+    }
+
     if (event.type !== 'session.status') return;
 
     const sessionId = event.properties?.sessionID;
@@ -203,6 +266,12 @@ export class MultiplexerSessionManager {
     }
 
     if (event.properties?.status?.type === 'busy') {
+      log('[multiplexer-session-manager] session busy event received', {
+        instanceId: this.instanceId,
+        sessionId,
+        tracked: this.sessions.has(sessionId),
+        known: this.knownSessions.has(sessionId),
+      });
       await this.respawnIfKnown(sessionId);
     }
   }
@@ -215,6 +284,7 @@ export class MultiplexerSessionManager {
     if (!sessionId) return;
 
     log('[multiplexer-session-manager] session deleted, closing pane', {
+      instanceId: this.instanceId,
       sessionId,
     });
 
@@ -228,14 +298,18 @@ export class MultiplexerSessionManager {
       () => this.pollSessions(),
       POLL_INTERVAL_BACKGROUND_MS,
     );
-    log('[multiplexer-session-manager] polling started');
+    log('[multiplexer-session-manager] polling started', {
+      instanceId: this.instanceId,
+    });
   }
 
   private stopPolling(): void {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = undefined;
-      log('[multiplexer-session-manager] polling stopped');
+      log('[multiplexer-session-manager] polling stopped', {
+        instanceId: this.instanceId,
+      });
     }
   }
 
@@ -246,11 +320,7 @@ export class MultiplexerSessionManager {
     }
 
     try {
-      const statusResult = await this.client.session.status();
-      const allStatuses = (statusResult.data ?? {}) as Record<
-        string,
-        { type: string }
-      >;
+      const allStatuses = await this.fetchSessionStatuses();
 
       const now = Date.now();
       const sessionsToClose: Array<{ sessionId: string; reason: CloseReason }> =
@@ -262,12 +332,14 @@ export class MultiplexerSessionManager {
 
         if (status) {
           tracked.lastSeenAt = now;
+          tracked.seenInStatus = true;
           tracked.missingSince = undefined;
         } else if (!tracked.missingSince) {
           tracked.missingSince = now;
         }
 
         const missingTooLong =
+          tracked.seenInStatus &&
           !!tracked.missingSince &&
           now - tracked.missingSince >= SESSION_MISSING_GRACE_MS;
         const isTimedOut = now - tracked.createdAt > SESSION_TIMEOUT_MS;
@@ -288,6 +360,21 @@ export class MultiplexerSessionManager {
     }
   }
 
+  private async fetchSessionStatuses(): Promise<
+    Record<string, { type: string }>
+  > {
+    const url = new URL('/session/status', this.serverUrl);
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+
+    if (!response.ok) {
+      throw new Error(
+        `session status request failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    return (await response.json()) as Record<string, { type: string }>;
+  }
+
   private async closeSession(
     sessionId: string,
     reason: CloseReason,
@@ -300,11 +387,21 @@ export class MultiplexerSessionManager {
     if (existingClose) return existingClose;
 
     const tracked = this.sessions.get(sessionId);
-    if (!tracked || !this.multiplexer) return;
+    if (!tracked || !this.multiplexer) {
+      log('[multiplexer-session-manager] close skipped; session not tracked', {
+        instanceId: this.instanceId,
+        sessionId,
+        reason,
+        tracked: !!tracked,
+        hasMultiplexer: !!this.multiplexer,
+      });
+      return;
+    }
 
     this.sessions.delete(sessionId);
 
     log('[multiplexer-session-manager] closing session pane', {
+      instanceId: this.instanceId,
       sessionId,
       paneId: tracked.paneId,
       reason,
@@ -315,6 +412,7 @@ export class MultiplexerSessionManager {
       .then(() => undefined)
       .catch((err) =>
         log('[multiplexer-session-manager] failed to close session pane', {
+          instanceId: this.instanceId,
           sessionId,
           paneId: tracked.paneId,
           reason,
@@ -350,6 +448,7 @@ export class MultiplexerSessionManager {
         log(
           '[multiplexer-session-manager] server not running, skipping busy respawn',
           {
+            instanceId: this.instanceId,
             serverUrl: this.serverUrl,
             sessionId,
           },
@@ -364,6 +463,7 @@ export class MultiplexerSessionManager {
       log(
         '[multiplexer-session-manager] child session busy again, respawning pane',
         {
+          instanceId: this.instanceId,
           sessionId,
           parentId: known.parentId,
           title: known.title,
@@ -374,6 +474,7 @@ export class MultiplexerSessionManager {
         .spawnPane(sessionId, known.title, this.serverUrl, known.directory)
         .catch((err) => {
           log('[multiplexer-session-manager] failed to respawn pane', {
+            instanceId: this.instanceId,
             error: String(err),
           });
           return { success: false, paneId: undefined };
@@ -389,6 +490,7 @@ export class MultiplexerSessionManager {
           log(
             '[multiplexer-session-manager] closing stale respawned pane failed',
             {
+              instanceId: this.instanceId,
               sessionId,
               paneId: paneResult.paneId,
               error: String(err),
@@ -407,9 +509,11 @@ export class MultiplexerSessionManager {
         directory: known.directory,
         createdAt: now,
         lastSeenAt: now,
+        seenInStatus: false,
       });
 
       log('[multiplexer-session-manager] pane respawned on busy', {
+        instanceId: this.instanceId,
         sessionId,
         paneId: paneResult.paneId,
       });

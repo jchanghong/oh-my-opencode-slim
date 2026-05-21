@@ -1,5 +1,18 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { MultiplexerSessionManager } from './session-manager';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  MultiplexerSessionManager,
+  resetMultiplexerSessionManagerState,
+} from './session-manager';
+
+const originalFetch = globalThis.fetch;
+let mockSessionStatuses: Record<string, { type: string }> = {};
+const mockFetch = mock(
+  async () =>
+    new Response(JSON.stringify(mockSessionStatuses), {
+      headers: { 'content-type': 'application/json' },
+      status: 200,
+    }),
+);
 
 // Define the mock multiplexer
 const mockMultiplexer = {
@@ -25,6 +38,7 @@ mock.module('../multiplexer', () => ({
 function createMockContext(overrides?: {
   sessionStatusResult?: { data?: Record<string, { type: string }> };
   directory?: string;
+  serverUrl?: string;
 }) {
   const defaultPort = process.env.OPENCODE_PORT ?? '4096';
   return {
@@ -36,8 +50,14 @@ function createMockContext(overrides?: {
       },
     },
     directory: overrides?.directory ?? '/test/directory',
-    serverUrl: new URL(`http://localhost:${defaultPort}`),
+    serverUrl: new URL(
+      overrides?.serverUrl ?? `http://localhost:${defaultPort}`,
+    ),
   } as any;
+}
+
+function setMockSessionStatuses(statuses: Record<string, { type: string }>) {
+  mockSessionStatuses = statuses;
 }
 
 const defaultMultiplexerConfig = {
@@ -58,6 +78,10 @@ function createDeferred<T>() {
 
 describe('MultiplexerSessionManager', () => {
   beforeEach(() => {
+    resetMultiplexerSessionManagerState();
+    mockSessionStatuses = {};
+    mockFetch.mockClear();
+    globalThis.fetch = mockFetch as typeof fetch;
     mockMultiplexer.spawnPane.mockReset();
     mockMultiplexer.spawnPane.mockResolvedValue({
       success: true,
@@ -67,6 +91,10 @@ describe('MultiplexerSessionManager', () => {
     mockMultiplexer.closePane.mockResolvedValue(true);
     mockMultiplexer.isInsideSession.mockReset();
     mockMultiplexer.isInsideSession.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   describe('constructor', () => {
@@ -227,14 +255,121 @@ describe('MultiplexerSessionManager', () => {
         properties: { info: { id: 'c1', parentID: 'p1' } },
       });
 
-      // Mock status
-      ctx.client.session.status.mockResolvedValue({
-        data: { c1: { type: 'idle' } },
-      });
+      setMockSessionStatuses({ c1: { type: 'idle' } });
 
       await (manager as any).pollSessions();
 
       expect(mockMultiplexer.closePane).toHaveBeenCalledWith('p-1');
+    });
+
+    test('closes pane immediately on session.idle event', async () => {
+      const ctx = createMockContext();
+      mockMultiplexer.spawnPane.mockResolvedValue({
+        success: true,
+        paneId: 'p-idle-event',
+      });
+
+      const manager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await manager.onSessionCreated({
+        type: 'session.created',
+        properties: { info: { id: 'idle-event-child', parentID: 'parent' } },
+      });
+
+      await manager.onSessionStatus({
+        type: 'session.idle',
+        properties: { sessionID: 'idle-event-child' },
+      });
+
+      expect(mockMultiplexer.closePane).toHaveBeenCalledWith('p-idle-event');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test('closes pane when idle event reaches a different manager instance', async () => {
+      const ctx = createMockContext();
+      mockMultiplexer.spawnPane.mockResolvedValue({
+        success: true,
+        paneId: 'p-shared-idle',
+      });
+
+      const spawningManager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+      const idleManager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await spawningManager.onSessionCreated({
+        type: 'session.created',
+        properties: { info: { id: 'shared-child', parentID: 'parent' } },
+      });
+
+      await idleManager.onSessionStatus({
+        type: 'session.idle',
+        properties: { sessionID: 'shared-child' },
+      });
+
+      expect(mockMultiplexer.closePane).toHaveBeenCalledWith('p-shared-idle');
+    });
+
+    test('respawns resumed known session from a different manager instance', async () => {
+      const ctx = createMockContext();
+      mockMultiplexer.spawnPane
+        .mockResolvedValueOnce({
+          success: true,
+          paneId: 'p-first',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          paneId: 'p-resumed',
+        });
+
+      const firstManager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+      const secondManager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await firstManager.onSessionCreated({
+        type: 'session.created',
+        properties: {
+          info: {
+            id: 'resumed-child',
+            parentID: 'parent',
+            title: 'Resumed Worker',
+            directory: '/resumed/dir',
+          },
+        },
+      });
+
+      await secondManager.onSessionStatus({
+        type: 'session.idle',
+        properties: { sessionID: 'resumed-child' },
+      });
+
+      await secondManager.onSessionStatus({
+        type: 'session.status',
+        properties: {
+          sessionID: 'resumed-child',
+          status: { type: 'busy' },
+        },
+      });
+
+      expect(mockMultiplexer.spawnPane).toHaveBeenCalledTimes(2);
+      expect(mockMultiplexer.spawnPane).toHaveBeenLastCalledWith(
+        'resumed-child',
+        'Resumed Worker',
+        `http://localhost:${process.env.OPENCODE_PORT ?? '4096'}/`,
+        '/resumed/dir',
+      );
     });
 
     test('does not close on transient status absence', async () => {
@@ -249,9 +384,91 @@ describe('MultiplexerSessionManager', () => {
         properties: { info: { id: 'c1', parentID: 'p1' } },
       });
 
-      ctx.client.session.status.mockResolvedValue({ data: {} });
+      setMockSessionStatuses({});
       await (manager as any).pollSessions();
 
+      expect(mockMultiplexer.closePane).not.toHaveBeenCalled();
+    });
+
+    test('does not close missing session that was never seen in status', async () => {
+      const ctx = createMockContext();
+      mockMultiplexer.spawnPane.mockResolvedValue({
+        success: true,
+        paneId: 'p-never-seen',
+      });
+      const manager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await manager.onSessionCreated({
+        type: 'session.created',
+        properties: { info: { id: 'never-seen', parentID: 'p1' } },
+      });
+
+      const tracked = (manager as any).sessions.get('never-seen');
+      tracked.missingSince = Date.now() - 60_000;
+
+      setMockSessionStatuses({});
+      await (manager as any).pollSessions();
+
+      expect(mockMultiplexer.closePane).not.toHaveBeenCalled();
+    });
+
+    test('keeps missing cleanup for sessions previously seen in status', async () => {
+      const ctx = createMockContext();
+      mockMultiplexer.spawnPane.mockResolvedValue({
+        success: true,
+        paneId: 'p-seen-before-missing',
+      });
+      const manager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await manager.onSessionCreated({
+        type: 'session.created',
+        properties: { info: { id: 'seen-before-missing', parentID: 'p1' } },
+      });
+
+      setMockSessionStatuses({ 'seen-before-missing': { type: 'busy' } });
+      await (manager as any).pollSessions();
+
+      const tracked = (manager as any).sessions.get('seen-before-missing');
+      tracked.missingSince = Date.now() - 60_000;
+
+      setMockSessionStatuses({});
+      await (manager as any).pollSessions();
+
+      expect(mockMultiplexer.closePane).toHaveBeenCalledWith(
+        'p-seen-before-missing',
+      );
+    });
+
+    test('polls the actual serverUrl instead of the plugin SDK default URL', async () => {
+      const ctx = createMockContext({
+        serverUrl: 'http://127.0.0.1:63871/',
+        sessionStatusResult: { data: {} },
+      });
+      const manager = new MultiplexerSessionManager(
+        ctx,
+        defaultMultiplexerConfig,
+      );
+
+      await manager.onSessionCreated({
+        type: 'session.created',
+        properties: { info: { id: 'child-live', parentID: 'parent-live' } },
+      });
+
+      setMockSessionStatuses({ 'child-live': { type: 'busy' } });
+
+      await (manager as any).pollSessions();
+
+      expect(ctx.client.session.status).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('http://127.0.0.1:63871/session/status'),
+        expect.any(Object),
+      );
       expect(mockMultiplexer.closePane).not.toHaveBeenCalled();
     });
 
@@ -284,9 +501,7 @@ describe('MultiplexerSessionManager', () => {
         },
       });
 
-      ctx.client.session.status.mockResolvedValue({
-        data: { 'child-789': { type: 'idle' } },
-      });
+      setMockSessionStatuses({ 'child-789': { type: 'idle' } });
       await (manager as any).pollSessions();
 
       await manager.onSessionStatus({

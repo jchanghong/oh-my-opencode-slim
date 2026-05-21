@@ -25,6 +25,7 @@ import {
   createJsonErrorRecoveryHook,
   createPhaseReminderHook,
   createPostFileToolNudgeHook,
+  createSessionGoalHook,
   createTaskSessionManagerHook,
   createTodoContinuationHook,
   ForegroundFallbackManager,
@@ -42,6 +43,10 @@ import {
   ast_grep_search,
   createCouncilTool,
   createPresetManager,
+  createReadSessionTool,
+  createSubtaskCommandManager,
+  createSubtaskState,
+  createSubtaskTool,
   createWebfetchTool,
 } from './tools';
 import { recordTuiAgentModel, recordTuiAgentModels } from './tui-state';
@@ -133,6 +138,7 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let jsonErrorRecoveryHook: ReturnType<typeof createJsonErrorRecoveryHook>;
   let foregroundFallback: ForegroundFallbackManager;
   let todoContinuationHook: ReturnType<typeof createTodoContinuationHook>;
+  let sessionGoalHook: ReturnType<typeof createSessionGoalHook>;
   let taskSessionManagerHook: ReturnType<typeof createTaskSessionManagerHook>;
   let interviewManager: ReturnType<typeof createInterviewManager>;
   let presetManager: ReturnType<typeof createPresetManager>;
@@ -142,6 +148,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let rewriteDisplayNameMentions: ReturnType<
     typeof createDisplayNameMentionRewriter
   >;
+  let subtaskCommandManager: ReturnType<typeof createSubtaskCommandManager>;
+  let subtaskState: ReturnType<typeof createSubtaskState>;
 
   // Counters for post-init health check (set inside try, checked outside)
   let toolCount = 0;
@@ -301,6 +309,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       autoEnable: config.todoContinuation?.autoEnable ?? false,
       autoEnableThreshold: config.todoContinuation?.autoEnableThreshold ?? 4,
     });
+    sessionGoalHook = createSessionGoalHook(ctx, config, {
+      getAgentName: (sessionID) => sessionAgentMap.get(sessionID),
+    });
     taskSessionManagerHook = createTaskSessionManagerHook(ctx, {
       maxSessionsPerAgent: config.sessionManager?.maxSessionsPerAgent ?? 2,
       readContextMinLines: config.sessionManager?.readContextMinLines ?? 10,
@@ -312,11 +323,15 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
     presetManager = createPresetManager(ctx, config);
     divoomManager = createDivoomManager(config.divoom);
 
+    subtaskState = createSubtaskState();
+    subtaskCommandManager = createSubtaskCommandManager(ctx, subtaskState);
+
     toolCount =
       Object.keys(councilTools).length +
       Object.keys(todoContinuationHook.tool).length +
       1 + // webfetch
-      2; // ast_grep_search, ast_grep_replace
+      2 + // ast_grep_search, ast_grep_replace
+      2; // subtask, read_session
   } catch (err) {
     // Plugin init failed: log visibly before re-throwing so the user
     // sees something actionable instead of a silent "loaded but empty".
@@ -386,6 +401,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       ...todoContinuationHook.tool,
       ast_grep_search,
       ast_grep_replace,
+      subtask: createSubtaskTool(ctx, subtaskState, depthTracker),
+      read_session: createReadSessionTool(ctx.client, subtaskState),
     },
 
     mcp: mcps,
@@ -720,7 +737,9 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
       }
 
       interviewManager.registerCommand(opencodeConfig);
+      sessionGoalHook.registerCommand(opencodeConfig);
       presetManager.registerCommand(opencodeConfig);
+      subtaskCommandManager.registerCommand(opencodeConfig);
     },
 
     event: async (input) => {
@@ -765,23 +784,30 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         }
       }
 
+      // Handle multiplexer pane spawning for OpenCode's Task tool sessions
+      await multiplexerSessionManager.onSessionCreated(event);
+
+      // Handle session status/idle events for pane cleanup early so child panes
+      // close promptly even if later hooks do additional work on idle.
+      await multiplexerSessionManager.onSessionStatus(event);
+
+      // Handle session.deleted events for pane cleanup
+      await multiplexerSessionManager.onSessionDeleted(event);
+
       // Runtime model fallback for foreground agents (rate-limit detection)
       await foregroundFallback.handleEvent(input.event);
 
       // Todo-continuation: auto-continue orchestrator on incomplete todos
       await todoContinuationHook.handleEvent(input);
 
+      sessionGoalHook.handleEvent(
+        input as {
+          event: { type: string; properties?: Record<string, unknown> };
+        },
+      );
+
       // Handle auto-update checking
       await autoUpdateChecker.event(input);
-
-      // Handle multiplexer pane spawning for OpenCode's Task tool sessions
-      await multiplexerSessionManager.onSessionCreated(event);
-
-      // Handle session.status events for pane cleanup
-      await multiplexerSessionManager.onSessionStatus(event);
-
-      // Handle session.deleted events for pane cleanup
-      await multiplexerSessionManager.onSessionDeleted(event);
 
       await interviewManager.handleEvent(
         input as {
@@ -794,6 +820,18 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
           event: {
             type: string;
             properties?: { info?: { id?: string }; sessionID?: string };
+          };
+        },
+      );
+
+      subtaskCommandManager.handleEvent(
+        input as {
+          event: {
+            type: string;
+            properties?: {
+              info?: { id?: string; parentID?: string };
+              sessionID?: string;
+            };
           };
         },
       );
@@ -927,6 +965,15 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
         output as { parts: Array<{ type: string; text?: string }> },
       );
+
+      await sessionGoalHook.handleCommandExecuteBefore(
+        input as {
+          command: string;
+          sessionID: string;
+          arguments: string;
+        },
+        output as { parts: Array<{ type: string; text?: string }> },
+      );
     },
 
     'chat.headers': chatHeadersHook['chat.headers'],
@@ -998,6 +1045,8 @@ const OhMyOpenCodeLite: Plugin = async (ctx) => {
             (output.system[0] ? `\n\n${output.system[0]}` : '');
         }
       }
+
+      sessionGoalHook.handleSystemTransform(input, output);
 
       // Collapse to single system message for provider compatibility.
       // Some providers (e.g. Qwen via VLLM/DashScope) reject multiple
