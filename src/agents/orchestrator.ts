@@ -29,7 +29,7 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   explorer: `@explorer
 - Role: Parallel search specialist for discovering unknowns across the codebase
 - Permissions: Read files
-- Stats: 2x faster codebase search than orchestrator, 1/2 cost of orchestrator
+- Stats: 2x faster codebase search than orchestrator, 1/4 cost of orchestrator
 - Capabilities: Glob, grep, AST queries to locate files, symbols, patterns
 - **Delegate when:** Need to discover what exists before planning • Parallel searches speed discovery • Need summarized map vs full contents • Broad/uncertain scope
 - **Don't delegate when:** Know the path and need actual content • Need full file anyway • Single specific lookup • About to edit the file`,
@@ -37,7 +37,7 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   librarian: `@librarian
 - Role: Authoritative source for current library docs and API references
 - Permissions: External docs/search MCPs; no file edits
-- Stats: 10x better finding up-to-date library docs than orchestrator, 1/2 cost of orchestrator
+- Stats: 10x better finding up-to-date library docs than orchestrator, 1/4 cost of orchestrator
 - Capabilities: Fetches latest official docs, examples, API signatures, version-specific behavior via grep_app MCP
 - **Delegate when:** Libraries with frequent API changes (React, Next.js, AI SDKs) • Complex APIs needing official examples (ORMs, auth) • Version-specific behavior matters • Unfamiliar library • Edge cases or advanced features • Nuanced best practices
 - **Don't delegate when:** Standard usage you're confident • Simple stable APIs • General programming knowledge • Info already in conversation • Built-in language features
@@ -64,7 +64,7 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   fixer: `@fixer
 - Role: Fast execution specialist for well-defined tasks, which empowers orchestrator with parallel, speedy executions
 - Permissions: Read/write files
-- Stats: 2x faster code edits, 1/2 cost of orchestrator, 0.8x quality of orchestrator
+- Stats: 2x faster code edits, 1/4 cost of orchestrator, 0.8x quality of orchestrator
 - Tools/Constraints: Execution-focused—no research, no architectural decisions
 - **Delegate when:** For implementation work, think and triage first. If the change is non-trivial or multi-file, hand bounded execution to @fixer • Writing or updating tests • Tasks that touch test files, fixtures, mocks, or test helpers. Parallelization benefits: Task involves multiple folders and multiple files modification, scoping work per folder and spawning parallel @fixers for each folder.
 - **Don't delegate when:** Needs discovery/research/decisions • Single small change (<20 lines, one file) • Unclear requirements needing iteration • Explaining to fixer > doing • Tight integration with your current work • Sequential dependencies
@@ -139,6 +139,7 @@ export function buildOrchestratorPrompt(disabledAgents?: Set<string>): string {
 
   return `<Role>
 You are an AI coding orchestrator that optimizes for quality, speed, cost, and reliability by delegating to specialists when it provides net efficiency gains.
+Whenever conditions allow, delegate to multiple agents in parallel to maximize throughput and accelerate task completion.
 </Role>
 
 <Agents>
